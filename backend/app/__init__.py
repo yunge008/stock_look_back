@@ -1,0 +1,1 @@
+"""ETF strategy backtest application."""

@@ -1,0 +1,24 @@
+﻿@import "tailwindcss";
+@theme { --color-ink: #172033; --color-brand: #2563eb; }
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+body { margin: 0; min-width: 320px; background: #f6f8fc; color: #172033; font-family: Inter, "Microsoft YaHei", sans-serif; }
+input, select { width: 100%; border: 1px solid #d8dee9; border-radius: .5rem; padding: .6rem .7rem; box-sizing: border-box; background: white; }
+input:focus, select:focus { outline: 2px solid #bfdbfe; border-color: #2563eb; }
+label { display: block; font-size: .75rem; font-weight: 600; color: #475569; margin-bottom: .3rem; }
+.hint { margin: .3rem 0 0; color: #64748b; font-size: .7rem; line-height: 1.45; }
+.toggle { display: flex; align-items: flex-start; gap: .5rem; font-size: .8rem; line-height: 1.35; cursor: pointer; }
+.toggle input { width: auto; margin-top: .1rem; }
+.suffix { position: absolute; right: .75rem; top: .62rem; color: #64748b; font-size: .8rem; pointer-events: none; }
+.section-title { margin-top: .25rem; border-bottom: 1px solid #e2e8f0; padding-bottom: .45rem; font-size: .8rem; font-weight: 700; color: #1e3a8a; }
+.notice-blue { border-radius: .75rem; background: #eff6ff; padding: .8rem 1rem; color: #1e40af; font-size: .78rem; line-height: 1.55; }
+.notice-amber { border-radius: .75rem; background: #fffbeb; padding: .8rem 1rem; color: #92400e; font-size: .78rem; line-height: 1.55; }
+.meta-label { display: block; margin-bottom: .25rem; color: #64748b; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: .78rem; white-space: nowrap; }
+th { position: sticky; top: 0; z-index: 1; background: white; color: #64748b; font-weight: 600; }
+th, td { padding: .65rem .7rem; border-bottom: 1px solid #f1f5f9; }
+.disclaimer { border-radius: .75rem; border: 1px solid #e2e8f0; background: white; padding: .8rem; }
+
+
+
+.instrument-name { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: .5rem; background: #eff6ff; padding: .6rem .65rem; color: #1d4ed8; font-size: .75rem; font-weight: 600; }
+
