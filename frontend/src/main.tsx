@@ -58,6 +58,8 @@ function App() {
   const [tableTab, setTableTab] = useState('trades');
   const [settingsTab, setSettingsTab] = useState<'core' | 'settings'>('core');
   const [instrumentName, setInstrumentName] = useState('');
+  const [targetEntry, setTargetEntry] = useState<any>(null);
+  const [targetLoading, setTargetLoading] = useState(false);
 
   const change = (e: any) => {
     const strings = ['symbol', 'strategy', 'start_date', 'end_date', 'entry_condition_mode', 'execution_mode'];
@@ -75,6 +77,21 @@ function App() {
       setInstrumentName(response.ok && body.name ? body.name : '名称暂不可用');
     } catch { setInstrumentName('名称暂不可用'); }
   }
+  async function fetchTargetEntry() {
+    setTargetLoading(true); setError('');
+    try {
+      const payload = {
+        symbol: form.symbol, lookback_days: form.lookback_days, ma_window: form.ma_window,
+        entry_drawdown_pct: form.entry_drawdown_pct, ma_discount_pct: form.ma_discount_pct,
+      };
+      const response = await fetch(`${API}/target-entry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail || '目标买点计算失败');
+      setTargetEntry(body.target);
+    } catch (err: any) {
+      setError(err.message === 'Failed to fetch' ? '无法连接回测后端。线上页面需要配置 VITE_API_BASE_URL 指向公网 FastAPI 服务；本地请先运行 backend/python main.py。' : err.message);
+    } finally { setTargetLoading(false); }
+  }
   async function submit(e: any) {
     e.preventDefault(); setLoading(true); setError('');
     try {
@@ -82,7 +99,7 @@ function App() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || '回测请求失败');
       setResult(body); setTab('equity');
-    } catch (err: any) { setError(err.message); } finally { setLoading(false); }
+    } catch (err: any) { setError(err.message === 'Failed to fetch' ? '无法连接回测后端。线上页面需要配置 VITE_API_BASE_URL 指向公网 FastAPI 服务；本地请先运行 backend/python main.py。' : err.message); } finally { setLoading(false); }
   }
 
   const quality = form.strategy === 'quality_grid';
@@ -122,6 +139,8 @@ function App() {
             <div className="grid grid-cols-2 gap-3"><Field label="开始日期" name="start_date" value={form.start_date} onChange={change} type="date"/><Field label="结束日期" name="end_date" value={form.end_date} onChange={change} type="date"/></div>
             <div className="grid grid-cols-2 gap-3"><Field label="回撤回看交易日" name="lookback_days" value={form.lookback_days} onChange={change}/><Field label="MA 周期" name="ma_window" value={form.ma_window} onChange={change}/></div>
             <div className="grid grid-cols-2 gap-3"><PercentField label="最高收盘回撤" name="entry_drawdown_pct" value={form.entry_drawdown_pct} setForm={setForm} form={form}/><PercentField label="低于 MA 幅度" name="ma_discount_pct" value={form.ma_discount_pct} setForm={setForm} form={form}/></div>
+            <button type="button" onClick={fetchTargetEntry} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:text-slate-400" disabled={targetLoading}>{targetLoading ? '正在测算目标买点…' : '测算最新目标买点'}</button>
+            {targetEntry && <div className="target-card"><p className="m-0 text-xs font-semibold text-blue-700">最新目标买点（{targetEntry.as_of_date}）</p><p className="my-1 text-2xl font-bold text-blue-900">{fmt(targetEntry.target_buy_price)}</p><p className="m-0 text-xs text-slate-600">最高收盘回撤价 {fmt(targetEntry.drawdown_buy_price)} · MA 下方价 {fmt(targetEntry.ma_buy_price)}</p><p className={`mb-0 mt-2 text-xs font-semibold ${targetEntry.conditions_met ? 'text-green-700' : 'text-amber-700'}`}>{targetEntry.conditions_met ? '当前收盘价已同时满足两个入场条件。' : `当前收盘价距目标买点高 ${fmt(targetEntry.distance_to_target_pct, true)}。`}</p></div>}
           </> : <>
             <div><label>策略</label><select name="strategy" value={form.strategy} onChange={change}>
               <option value="quality_grid">质量过滤逐笔网格</option><option value="dca">普通定投</option><option value="ma_band">MA 趋势策略</option><option value="dynamic">动态仓位策略</option>
@@ -196,6 +215,7 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App/>);
+
 
 
 

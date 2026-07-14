@@ -4,8 +4,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.data.provider import MarketDataError, get_history, instrument_name
 from app.db.repository import get_run, list_runs
-from app.domain.models import BacktestRequest, OptimizationRequest
+from app.domain.models import BacktestRequest, OptimizationRequest, TargetEntryRequest
 from app.services.backtest_service import execute
+from app.services.target_entry_service import get_target_entry
 
 router = APIRouter(prefix="/api/v1")
 
@@ -25,6 +26,14 @@ def availability(symbol: str):
     except MarketDataError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+
+@router.post("/target-entry")
+def target_entry(request: TargetEntryRequest):
+    try:
+        target, metadata = get_target_entry(request)
+        return {"target": target, "data_info": metadata}
+    except (MarketDataError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 @router.post("/backtests")
 def create_backtest(request: BacktestRequest):
@@ -64,4 +73,5 @@ def detail(run_id: str):
     if not result:
         raise HTTPException(404, "未找到该回测记录")
     return result
+
 

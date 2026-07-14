@@ -68,6 +68,19 @@ class BacktestRequest(BaseModel):
         return self
 
 
+class TargetEntryRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=20)
+    lookback_days: int = Field(default=360, ge=2, le=3000)
+    ma_window: int = Field(default=120, ge=2, le=3000)
+    entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
+    ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
+    as_of_date: date | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper()
+
 class OptimizationRequest(BacktestRequest):
     strategy: StrategyType = StrategyType.MA_BAND
     ma_windows: list[int] = [60, 120, 180, 200]
@@ -109,4 +122,5 @@ class LotRecord(BaseModel):
     realized_pnl: float | None = None
     return_pct: float | None = None
     exit_reason: str | None = None
+
 
