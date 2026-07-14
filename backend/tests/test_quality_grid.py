@@ -94,6 +94,24 @@ class QualityGridTests(unittest.TestCase):
         self.assertEqual(fee, 0)
         insufficient_quantity, _ = _buy_quantity(20_000, 29_999, 300, 100, req)
         self.assertEqual(insufficient_quantity, 0)
+    def test_zero_reentry_drop_disables_last_exit_price_restriction(self):
+        data = bars([100, 100, 100, 110, 110], [100, 100, 110, 110, 110])
+        relaxed_metrics, relaxed_trades, _, _, _ = run_quality_grid(
+            data, request(entry_drawdown_pct=0, ma_discount_pct=0, reentry_drop_pct=0), "etf"
+        )
+        _, restricted_trades, _, _, _ = run_quality_grid(
+            data, request(entry_drawdown_pct=0, ma_discount_pct=0, reentry_drop_pct=0.05), "etf"
+        )
+        relaxed_rounds = [trade.round_no for trade in relaxed_trades if trade.side == "BUY" and trade.status == "FILLED"]
+        restricted_rounds = [trade.round_no for trade in restricted_trades if trade.side == "BUY" and trade.status == "FILLED"]
+        self.assertEqual(relaxed_rounds, [1, 2])
+        self.assertEqual(restricted_rounds, [1])
+        self.assertEqual(relaxed_metrics["completed_rounds"], 1)
+    def test_invested_capital_annualized_return_is_reported(self):
+        data = bars([120, 100, 100, 102], [120, 100, 101, 102])
+        metrics, _, _, _, _ = run_quality_grid(data, request(), "etf")
+        self.assertIn("invested_capital_annualized_return", metrics)
+        self.assertGreater(metrics["invested_capital_annualized_return"], metrics["invested_capital_return"])
     def test_open_lot_is_not_forced_closed_at_end(self):
         data = bars([120, 100, 100, 102], [120, 100, 101, 102])
         metrics, trades, lots, curve, _ = run_quality_grid(data, request(), "etf")
@@ -107,5 +125,3 @@ class QualityGridTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

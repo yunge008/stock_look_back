@@ -59,6 +59,26 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(meta["price_type"], "前复权(qfq)")
         self.assertEqual(meta["warning"], provider.A_STOCK_SINA_WARNING)
         self.assertEqual(len(frame), 2)
+    def test_us_ticker_detection_accepts_yahoo_class_shares(self):
+        self.assertEqual(provider.instrument_type("AAPL"), "us_stock")
+        self.assertEqual(provider.instrument_type("BRK.B"), "us_stock")
+
+    def test_us_stock_uses_yahoo_finance_adjusted_history(self):
+        raw = pd.DataFrame({
+            "Open": [100.0, 101.0], "High": [101.0, 102.0], "Low": [99.0, 100.0],
+            "Close": [100.5, 101.5], "Volume": [1000, 1200],
+        }, index=pd.to_datetime(["2024-01-02", "2024-01-03"]))
+        raw.index.name = "Date"
+        with patch("yfinance.Ticker") as ticker:
+            ticker.return_value.history.return_value = raw
+            frame, meta = provider._fetch_akshare("AAPL", date(2024, 1, 1), date(2024, 1, 3))
+        ticker.assert_called_once_with("AAPL")
+        ticker.return_value.history.assert_called_once_with(
+            start="2024-01-01", end="2024-01-04", auto_adjust=True, actions=False,
+        )
+        self.assertEqual(meta["source"], "Yahoo Finance / 美股")
+        self.assertEqual(meta["price_type"], "复权 OHLC（auto_adjust）")
+        self.assertEqual(list(frame["close"]), [100.5, 101.5])
     def test_history_is_cached_with_metadata(self):
         start, end = date(2024, 1, 1), date(2024, 1, 10)
         warmup = start - timedelta(days=1200)
@@ -82,8 +102,3 @@ class ProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-
-
-

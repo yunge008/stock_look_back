@@ -59,6 +59,12 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
     last = curve.iloc[-1]
     max_used = float(curve["invested_cost"].max())
     total_profit = realized + float(last["unrealized_profit"])
+    # Annualize the return on the maximum capital actually occupied by open lots.
+    invested_annualized = (
+        (1 + total_profit / max_used) ** (1 / years) - 1
+        if max_used > 0 and 1 + total_profit / max_used > 0
+        else -1.0 if max_used > 0 else 0.0
+    )
     return {
         "realized_profit": float(realized),
         "unrealized_profit": float(last["unrealized_profit"]),
@@ -73,6 +79,7 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
         "sharpe_ratio": None if sharpe is None else float(sharpe),
         "max_strategy_cash_used": max_used,
         "invested_capital_return": float(total_profit / max_used) if max_used > 0 else 0.0,
+        "invested_capital_annualized_return": float(invested_annualized),
         "max_concurrent_layers": int(max_layers),
         "completed_rounds": int(completed_rounds),
         "incomplete_rounds": 1 if has_open_round else 0,
@@ -211,7 +218,12 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
                             }]
                             break
         elif req.quality_confirmed and _entry_signal(bar, req):
-            reentry_ok = last_final_exit_price is None or price <= last_final_exit_price * (1 - req.reentry_drop_pct)
+            # A zero threshold explicitly disables the price-vs-last-exit restriction.
+            reentry_ok = (
+                last_final_exit_price is None
+                or req.reentry_drop_pct == 0
+                or price <= last_final_exit_price * (1 - req.reentry_drop_pct)
+            )
             if reentry_ok:
                 pending = [{
                     "side": "BUY", "signal_date": day, "round_no": next_round, "layer_no": 0,
@@ -250,7 +262,3 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
     metrics = _calculate_metrics(curve, realized, completed_rounds, bool(open_lots()), max_layers,
                                  last_final_exit_price, req.max_strategy_cash)
     return metrics, trades, [LotRecord.model_validate(x) for x in lots], curve, list(dict.fromkeys(warnings))
-
-
-
-

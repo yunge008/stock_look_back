@@ -23,7 +23,7 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 2. 首仓须经 `quality_confirmed` 明确确认，价格数据不能代替财务质量筛选。
 3. 四层补仓锚定本轮首仓实际成交价；单日最多一层。
 4. 每个 lot 独立全量止盈；禁止把一个 lot 拆成两笔卖出。
-5. 组合清仓仅处理剩余 lot；期末不可强制平仓。
+5. 组合清仓仅处理剩余 lot；期末不可强制平仓。再入场跌幅为 `0` 时，取消相对最终清仓价的价格限制。
 6. `max_strategy_cash` 是硬上限。整手标的在订单金额不足一手、但资金池充足时，自动提升到一手实际成本；绝不融资。
 
 ## 数据约定
@@ -31,6 +31,7 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - 标准行情列：`date, symbol, open, high, low, close, adj_close, volume`。
 - A 股：东方财富 qfq → 新浪 qfq 回退。
 - ETF：东方财富 qfq → 新浪未复权回退；必须保留醒目警告。
+- 美股：Yahoo Finance 自动复权 OHLC；代码支持 AAPL、MSFT、BRK.B。
 - 缓存的 `.meta.json` 要保留 `source`、`price_type`、`warning`、`last_updated` 和请求覆盖区间，避免 IPO 前无数据时反复联网。
 
 ## 数据库
@@ -60,5 +61,4 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - 2026-07-14：默认资金池改为 100 万、首仓 2 万、质量确认默认勾选、360 日回撤/MA120，并加入一手资金自动补足规则。
 - 2026-07-14：新增最新目标买点接口和页面卡片；目标价取回撤价与 MA 阈值价的较低者。
 - 2026-07-14：移除 Vercel 配置，明确项目仅通过 GitHub 同步并在本地运行。
-
-
+- 2026-07-14：美股历史日线改用 Yahoo Finance 自动复权数据源。

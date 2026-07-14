@@ -109,7 +109,7 @@ function App() {
     { title: 'CAGR', key: 'cagr', pct: true }, { title: '最大回撤', key: 'max_drawdown', pct: true },
     { title: '夏普', key: 'sharpe_ratio' }, { title: '最大资金占用', key: 'max_strategy_cash_used' },
     { title: '已投入资金收益率', key: 'invested_capital_return', pct: true },
-    { title: '最大同时层数', key: 'max_concurrent_layers' }, { title: '已完成轮次', key: 'completed_rounds' },
+    { title: '投入资金年化回报率', key: 'invested_capital_annualized_return', pct: true }, { title: '已完成轮次', key: 'completed_rounds' },
     { title: '未完成轮次', key: 'incomplete_rounds' }, { title: '当前现金', key: 'current_cash' },
     { title: '当前持仓市值', key: 'current_market_value' }, { title: '当前持仓数量', key: 'current_quantity' },
   ] : result ? [
@@ -128,7 +128,7 @@ function App() {
       <form onSubmit={submit} className="h-fit rounded-2xl bg-white p-5 shadow-sm xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto">
         <h2 className="mt-0 text-lg">回测参数</h2>
         <div className="grid gap-4">
-          <div><label>股票 / ETF 代码</label><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"><input name="symbol" type="text" value={form.symbol} onChange={change} onBlur={lookupInstrument}/><span className="instrument-name">{instrumentName || "输入后识别名称"}</span></div><p className="hint">例如：600519、513500、510300</p></div>
+          <div><label>股票 / ETF / 美股代码</label><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"><input name="symbol" type="text" value={form.symbol} onChange={change} onBlur={lookupInstrument}/><span className="instrument-name">{instrumentName || "输入后识别名称"}</span></div><p className="hint">例如：600519、513500、AAPL、MSFT、BRK.B（美股使用 Yahoo Finance）</p></div>
           <button className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:bg-slate-400" disabled={loading}>{loading ? '正在获取行情、计算并保存…' : '开始回测'}</button>
           <div className="flex border-b border-slate-200">
             <button type="button" onClick={() => setSettingsTab('core')} className={`border-b-2 px-3 py-2 text-sm ${settingsTab === 'core' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>核心参数</button>
@@ -165,7 +165,7 @@ function App() {
               <PercentField label="每个 lot 独立全量止盈" name="lot_take_profit_pct" value={form.lot_take_profit_pct} setForm={setForm} form={form} hint="达到阈值后卖出该 lot 全部数量，不拆成两次卖。"/>
               <Toggle label="启用组合盈利清仓" name="basket_take_profit_enabled" checked={form.basket_take_profit_enabled} onChange={change}/>
               {form.basket_take_profit_enabled && <PercentField label="组合清仓阈值" name="basket_take_profit_pct" value={form.basket_take_profit_pct} setForm={setForm} form={form}/>} 
-              <PercentField label="完全清仓后再入场跌幅" name="reentry_drop_pct" value={form.reentry_drop_pct} setForm={setForm} form={form}/>
+              <PercentField label="完全清仓后再入场跌幅" name="reentry_drop_pct" value={form.reentry_drop_pct} setForm={setForm} form={form} hint="设为 0 即取消相对上一轮最终清仓价的跌幅限制；仍需满足低位入场条件。"/>
 
               <div className="section-title">费用、滑点与最小交易单位</div>
               <PercentField label="佣金率" name="commission_rate" value={form.commission_rate} setForm={setForm} form={form}/>
@@ -215,8 +215,3 @@ function App() {
 }
 
 createRoot(document.getElementById('root')!).render(<App/>);
-
-
-
-
-
