@@ -31,7 +31,7 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - 标准行情列：`date, symbol, open, high, low, close, adj_close, volume`。
 - A 股：东方财富 qfq → 新浪 qfq 回退。
 - ETF：东方财富 qfq → 新浪未复权回退；必须保留醒目警告。
-- 美股：Yahoo Finance 自动复权 OHLC；代码支持 AAPL、MSFT、BRK.B。
+- 美股：Yahoo Finance 自动复权 OHLC；代码支持 AAPL、MSFT、BRK.B。`r`n- 港股：Yahoo Finance 自动复权 OHLC；代码必须为 `0700.HK`、`9988.HK` 形式。整手数未接入，按 1 股最小单位模拟并保留警告。
 - 缓存的 `.meta.json` 要保留 `source`、`price_type`、`warning`、`last_updated` 和请求覆盖区间，避免 IPO 前无数据时反复联网。
 
 ## 数据库

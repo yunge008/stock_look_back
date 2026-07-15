@@ -128,7 +128,7 @@ function App() {
       <form onSubmit={submit} className="h-fit rounded-2xl bg-white p-5 shadow-sm xl:max-h-[calc(100vh-4rem)] xl:overflow-y-auto">
         <h2 className="mt-0 text-lg">回测参数</h2>
         <div className="grid gap-4">
-          <div><label>股票 / ETF / 美股代码</label><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"><input name="symbol" type="text" value={form.symbol} onChange={change} onBlur={lookupInstrument}/><span className="instrument-name">{instrumentName || "输入后识别名称"}</span></div><p className="hint">例如：600519、513500、AAPL、MSFT、BRK.B（美股使用 Yahoo Finance）</p></div>
+          <div><label>股票 / ETF / 美股 / 港股代码</label><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"><input name="symbol" type="text" value={form.symbol} onChange={change} onBlur={lookupInstrument}/><span className="instrument-name">{instrumentName || "输入后识别名称"}</span></div><p className="hint">例如：600519、513500、AAPL、MSFT、BRK.B、0700.HK、9988.HK（美股 / 港股使用 Yahoo Finance）</p></div>
           <button className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:bg-slate-400" disabled={loading}>{loading ? '正在获取行情、计算并保存…' : '开始回测'}</button>
           <div className="flex border-b border-slate-200">
             <button type="button" onClick={() => setSettingsTab('core')} className={`border-b-2 px-3 py-2 text-sm ${settingsTab === 'core' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>核心参数</button>

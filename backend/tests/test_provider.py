@@ -63,6 +63,21 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(provider.instrument_type("AAPL"), "us_stock")
         self.assertEqual(provider.instrument_type("BRK.B"), "us_stock")
 
+    def test_hk_stock_uses_yahoo_finance_with_hk_metadata(self):
+        raw = pd.DataFrame({
+            "Open": [300.0, 302.0], "High": [303.0, 304.0], "Low": [299.0, 301.0],
+            "Close": [301.0, 303.0], "Volume": [1000, 1200],
+        }, index=pd.to_datetime(["2024-01-02", "2024-01-03"]))
+        raw.index.name = "Date"
+        self.assertEqual(provider.instrument_type("0700.HK"), "hk_stock")
+        with patch("yfinance.Ticker") as ticker:
+            ticker.return_value.history.return_value = raw
+            frame, meta = provider._fetch_akshare("0700.HK", date(2024, 1, 1), date(2024, 1, 3))
+        ticker.assert_called_once_with("0700.HK")
+        self.assertEqual(meta["source"], "Yahoo Finance / 港股")
+        self.assertEqual(meta["instrument_type"], "hk_stock")
+        self.assertIn("整手数", meta["warning"])
+        self.assertEqual(list(frame["close"]), [301.0, 303.0])
     def test_us_stock_uses_yahoo_finance_adjusted_history(self):
         raw = pd.DataFrame({
             "Open": [100.0, 101.0], "High": [101.0, 102.0], "Low": [99.0, 100.0],

@@ -22,7 +22,10 @@ def instrument_type(symbol: str) -> str:
     if normalized.isdigit() and len(normalized) == 6:
         # Common Shanghai/Shenzhen ETF and listed-fund prefixes.
         return "etf" if normalized.startswith(("5", "15", "16", "18")) else "a_stock"
-    # Yahoo Finance ticker symbols, including class shares such as BRK.B.
+    # Yahoo Finance Hong Kong tickers require the .HK suffix, e.g. 0700.HK.
+    if re.fullmatch(r"\d{4,5}\.HK", normalized):
+        return "hk_stock"
+    # Yahoo Finance US ticker symbols, including class shares such as BRK.B.
     return "us_stock" if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,19}", normalized) else "unknown"
 @lru_cache(maxsize=1024)
 def instrument_name(symbol: str) -> str | None:
@@ -63,7 +66,7 @@ def instrument_name(symbol: str) -> str | None:
                 match = spot[spot[code_column].astype(str).str.extract(r"(\d{6})", expand=False) == symbol]
                 if not match.empty:
                     return str(match.iloc[0][name_column]).strip() or None
-        elif kind == "us_stock":
+        elif kind in {"us_stock", "hk_stock"}:
             import yfinance as yf
             info = yf.Ticker(symbol).get_info()
             return str(info.get("longName") or info.get("shortName") or "").strip() or None
@@ -109,7 +112,9 @@ def _normalize(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
 
 
 def _fetch_yahoo_finance(symbol: str, start: date, end: date) -> tuple[pd.DataFrame, dict]:
-    """Fetch adjusted US daily bars from Yahoo Finance."""
+    """Fetch adjusted US or Hong Kong daily bars from Yahoo Finance."""
+    kind = instrument_type(symbol)
+    market_label = "港股" if kind == "hk_stock" else "美股"
     try:
         import yfinance as yf
         raw = yf.Ticker(symbol).history(
@@ -119,15 +124,20 @@ def _fetch_yahoo_finance(symbol: str, start: date, end: date) -> tuple[pd.DataFr
             actions=False,
         )
         if raw.empty:
-            raise MarketDataError(f"Yahoo Finance 未返回 {symbol} 的美股日线。")
+            raise MarketDataError(f"Yahoo Finance 未返回 {symbol} 的{market_label}日线。")
         normalized = _normalize(raw.reset_index(), symbol)
         if normalized.empty:
-            raise MarketDataError(f"Yahoo Finance 返回的 {symbol} 美股日线为空。")
+            raise MarketDataError(f"Yahoo Finance 返回的 {symbol} {market_label}日线为空。")
         metadata = {
-            "source": "Yahoo Finance / 美股",
+            "source": f"Yahoo Finance / {market_label}",
             "price_type": "复权 OHLC（auto_adjust）",
-            "instrument_type": "us_stock",
-            "warning": "美股日线来自 Yahoo Finance；复权价格已包含拆股与分红调整。",
+            "instrument_type": kind,
+            "warning": (
+                "港股日线来自 Yahoo Finance；复权价格已包含拆股与分红调整。"
+                "港股整手数因标的而异，当前回测按 1 股最小单位模拟。"
+                if kind == "hk_stock"
+                else "美股日线来自 Yahoo Finance；复权价格已包含拆股与分红调整。"
+            ),
             "last_updated": datetime.now().isoformat(timespec="seconds"),
             "fetch_requested_start": str(start),
             "fetch_requested_end": str(end),
@@ -136,11 +146,11 @@ def _fetch_yahoo_finance(symbol: str, start: date, end: date) -> tuple[pd.DataFr
     except MarketDataError:
         raise
     except Exception as exc:
-        raise MarketDataError(f"Yahoo Finance 获取美股 {symbol} 失败：{exc}") from exc
+        raise MarketDataError(f"Yahoo Finance 获取{market_label} {symbol} 失败：{exc}") from exc
 
 def _fetch_akshare(symbol: str, start: date, end: date) -> tuple[pd.DataFrame, dict]:
     kind = instrument_type(symbol)
-    if kind == "us_stock":
+    if kind in {"us_stock", "hk_stock"}:
         return _fetch_yahoo_finance(symbol, start, end)
     try:
         import akshare as ak
@@ -187,7 +197,7 @@ def _fetch_akshare(symbol: str, start: date, end: date) -> tuple[pd.DataFrame, d
                         f"A 股行情不可用。东方财富：{eastmoney_error}；新浪：{sina_error}"
                     ) from sina_error
         else:
-            raise MarketDataError("代码格式暂不支持；请使用 6 位 A 股/ETF 代码或 Yahoo Finance 美股代码，例如 600519、513500、AAPL。")
+            raise MarketDataError("代码格式暂不支持；请使用 6 位 A 股/ETF、Yahoo Finance 美股或港股代码，例如 600519、513500、AAPL、0700.HK。")
 
         normalized = _normalize(raw, symbol)
         if normalized.empty:
