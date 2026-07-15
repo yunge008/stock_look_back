@@ -57,10 +57,22 @@ def build_charts(curve, trades, lots=None, price_label="收盘价", entry_drawdo
         )
     price.update_layout(title="价格、MA、入场阈值线、逐层成本与交易标记", template="plotly_white", hovermode="x unified")
 
-    drawdown = go.Figure(go.Scatter(
-        x=dates, y=curve["drawdown"], fill="tozeroy", name="回撤", line={"color": "#dc2626"}
-    ))
-    drawdown.update_layout(title="账户回撤曲线", template="plotly_white", yaxis_tickformat=".1%", hovermode="x unified")
+    if "invested_cost" in curve and "market_value" in curve:
+        # Quality Grid drawdown is measured against the cost of lots actually
+        # held on that day.  Idle cash and the configured cash-pool limit are
+        # deliberately excluded.  Empty-position dates are gaps, not 0%.
+        invested = curve["invested_cost"].astype(float)
+        position_drawdown = (curve["market_value"].astype(float) / invested - 1).where(invested > 1e-9)
+        drawdown = go.Figure(go.Scatter(
+            x=dates, y=position_drawdown, fill="tozeroy", name="持仓成本回撤", line={"color": "#dc2626"}
+        ))
+        drawdown_title = "持仓成本回撤曲线（按当时未平仓 Lot 总成本）"
+    else:
+        drawdown = go.Figure(go.Scatter(
+            x=dates, y=curve["drawdown"], fill="tozeroy", name="回撤", line={"color": "#dc2626"}
+        ))
+        drawdown_title = "账户回撤曲线"
+    drawdown.update_layout(title=drawdown_title, template="plotly_white", yaxis_tickformat=".1%", hovermode="x unified")
     return {
         "equity": json.loads(equity.to_json()),
         "price": json.loads(price.to_json()),
