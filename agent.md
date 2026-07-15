@@ -31,7 +31,8 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - 标准行情列：`date, symbol, open, high, low, close, adj_close, volume`。
 - A 股：东方财富 qfq → 新浪 qfq 回退。
 - ETF：东方财富 qfq → 新浪未复权回退；必须保留醒目警告。
-- 美股：Yahoo Finance 自动复权 OHLC；代码支持 AAPL、MSFT、BRK.B。`r`n- 港股：Yahoo Finance 自动复权 OHLC；代码必须为 `0700.HK`、`9988.HK` 形式。整手数未接入，按 1 股最小单位模拟并保留警告。
+- 美股：Yahoo Finance 自动复权 OHLC；代码支持 AAPL、MSFT、BRK.B。
+- 港股：Yahoo Finance 自动复权 OHLC；输入 5 位纯数字代码，如 `00700`、`09988`，由 `yahoo_symbol` 自动转为 `.HK` 代码。整手数未接入，按 1 股最小单位模拟并保留警告。
 - 缓存的 `.meta.json` 要保留 `source`、`price_type`、`warning`、`last_updated` 和请求覆盖区间，避免 IPO 前无数据时反复联网。
 
 ## 数据库
@@ -44,7 +45,8 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - `backtest_lots`
 - `backtest_daily_equity`
 
-修改 schema 时要兼容已有 SQLite 文件，并新增对应持久化与读取测试。`r`n- 投入资金年化回报率只累计 `invested_cost > 0` 的持仓交易日；空仓等待期不得计入。
+修改 schema 时要兼容已有 SQLite 文件，并新增对应持久化与读取测试。
+- 投入资金年化回报率只累计 invested_cost > 0 的持仓交易日；空仓等待期不得计入。
 
 ## 修改前检查
 
@@ -58,7 +60,8 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - 2026-07-11：建立 FastAPI + React + SQLite + AkShare 回测骨架。
 - 2026-07-14：加入 Quality Grid 独立 lot、下一开盘成交、SQLite 明细、ETF 新浪回退与可视化。
 - 2026-07-14：加入 A 股新浪回退、缓存覆盖元数据、代码简称显示和核心/设置参数分层。
-- 2026-07-14：默认资金池改为 100 万、首仓 2 万、质量确认默认勾选、360 日回撤/MA120，并加入一手资金自动补足规则。
+- 2026-07-14：默认资金池为 100 万、首仓 2 万、质量确认默认勾选、360 日回撤/MA120，并加入一手资金自动补足规则。
 - 2026-07-14：新增最新目标买点接口和页面卡片；目标价取回撤价与 MA 阈值价的较低者。
 - 2026-07-14：移除 Vercel 配置，明确项目仅通过 GitHub 同步并在本地运行。
 - 2026-07-14：美股历史日线改用 Yahoo Finance 自动复权数据源。
+- 2026-07-15：港股代码改为 5 位纯数字输入，由 Yahoo Finance 适配层自动补足 .HK 后缀。

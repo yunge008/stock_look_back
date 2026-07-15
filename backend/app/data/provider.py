@@ -22,11 +22,22 @@ def instrument_type(symbol: str) -> str:
     if normalized.isdigit() and len(normalized) == 6:
         # Common Shanghai/Shenzhen ETF and listed-fund prefixes.
         return "etf" if normalized.startswith(("5", "15", "16", "18")) else "a_stock"
-    # Yahoo Finance Hong Kong tickers require the .HK suffix, e.g. 0700.HK.
-    if re.fullmatch(r"\d{4,5}\.HK", normalized):
+    # Hong Kong Exchange securities use five digits locally, e.g. 00700.
+    # The legacy Yahoo suffix form remains accepted for old saved runs.
+    if re.fullmatch(r"\d{5}", normalized) or re.fullmatch(r"\d{4,5}\.HK", normalized):
         return "hk_stock"
     # Yahoo Finance US ticker symbols, including class shares such as BRK.B.
     return "us_stock" if re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,19}", normalized) else "unknown"
+
+def yahoo_symbol(symbol: str) -> str:
+    """Convert a local five-digit Hong Kong code to Yahoo's .HK ticker."""
+    normalized = symbol.strip().upper()
+    if instrument_type(normalized) != "hk_stock":
+        return normalized
+    if normalized.endswith(".HK"):
+        return normalized
+    return f"{normalized.lstrip('0').zfill(4)}.HK"
+
 @lru_cache(maxsize=1024)
 def instrument_name(symbol: str) -> str | None:
     """Best-effort display name lookup; failures must never block a backtest."""
@@ -68,7 +79,7 @@ def instrument_name(symbol: str) -> str | None:
                     return str(match.iloc[0][name_column]).strip() or None
         elif kind in {"us_stock", "hk_stock"}:
             import yfinance as yf
-            info = yf.Ticker(symbol).get_info()
+            info = yf.Ticker(yahoo_symbol(symbol)).get_info()
             return str(info.get("longName") or info.get("shortName") or "").strip() or None
         elif kind == "etf":
             spot = ak.fund_etf_spot_em()
@@ -117,7 +128,7 @@ def _fetch_yahoo_finance(symbol: str, start: date, end: date) -> tuple[pd.DataFr
     market_label = "港股" if kind == "hk_stock" else "美股"
     try:
         import yfinance as yf
-        raw = yf.Ticker(symbol).history(
+        raw = yf.Ticker(yahoo_symbol(symbol)).history(
             start=start.isoformat(),
             end=(end + timedelta(days=1)).isoformat(),
             auto_adjust=True,
@@ -197,7 +208,7 @@ def _fetch_akshare(symbol: str, start: date, end: date) -> tuple[pd.DataFrame, d
                         f"A 股行情不可用。东方财富：{eastmoney_error}；新浪：{sina_error}"
                     ) from sina_error
         else:
-            raise MarketDataError("代码格式暂不支持；请使用 6 位 A 股/ETF、Yahoo Finance 美股或港股代码，例如 600519、513500、AAPL、0700.HK。")
+            raise MarketDataError("代码格式暂不支持；请使用 6 位 A 股/ETF、Yahoo Finance 美股或 5 位纯数字港股代码，例如 600519、513500、AAPL、00700。")
 
         normalized = _normalize(raw, symbol)
         if normalized.empty:

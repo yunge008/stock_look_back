@@ -69,11 +69,12 @@ class ProviderTests(unittest.TestCase):
             "Close": [301.0, 303.0], "Volume": [1000, 1200],
         }, index=pd.to_datetime(["2024-01-02", "2024-01-03"]))
         raw.index.name = "Date"
-        self.assertEqual(provider.instrument_type("0700.HK"), "hk_stock")
+        self.assertEqual(provider.instrument_type("00700"), "hk_stock")
         with patch("yfinance.Ticker") as ticker:
             ticker.return_value.history.return_value = raw
-            frame, meta = provider._fetch_akshare("0700.HK", date(2024, 1, 1), date(2024, 1, 3))
+            frame, meta = provider._fetch_akshare("00700", date(2024, 1, 1), date(2024, 1, 3))
         ticker.assert_called_once_with("0700.HK")
+        self.assertEqual(provider.yahoo_symbol("00007"), "0007.HK")
         self.assertEqual(meta["source"], "Yahoo Finance / 港股")
         self.assertEqual(meta["instrument_type"], "hk_stock")
         self.assertIn("整手数", meta["warning"])
