@@ -38,7 +38,11 @@ def execute(req, persist=True):
         metrics, trades, lots, curve, warnings = run_quality_grid(data, req, metadata.get("instrument_type", "unknown"))
         if metadata.get("warning"):
             warnings.insert(0, metadata["warning"])
-        charts = build_charts(curve, trades, lots, metadata.get("price_type", "收盘价"))
+        charts = build_charts(
+            curve, trades, lots, metadata.get("price_type", "收盘价"),
+            entry_drawdown_pct=req.entry_drawdown_pct,
+            ma_discount_pct=req.ma_discount_pct,
+        )
     else:
         metrics, trades, curve = run_backtest(data, req)
         lots, warnings = [], [metadata["warning"]] if metadata.get("warning") else []

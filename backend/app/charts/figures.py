@@ -3,7 +3,7 @@
 import plotly.graph_objects as go
 
 
-def build_charts(curve, trades, lots=None, price_label="收盘价"):
+def build_charts(curve, trades, lots=None, price_label="收盘价", entry_drawdown_pct=None, ma_discount_pct=None):
     lots = lots or []
     dates = curve["date"].astype(str).tolist()
 
@@ -18,6 +18,18 @@ def build_charts(curve, trades, lots=None, price_label="收盘价"):
     price = go.Figure()
     price.add_scatter(x=dates, y=curve["price"], name=price_label, line={"color": "#334155", "width": 2})
     price.add_scatter(x=dates, y=curve["ma"], name="MA", line={"color": "#f59e0b"})
+    if entry_drawdown_pct is not None and "rolling_high" in curve:
+        drawdown_line = curve["rolling_high"] * (1 - entry_drawdown_pct)
+        price.add_scatter(
+            x=dates, y=drawdown_line, name=f"最高收盘回撤线（{entry_drawdown_pct:.0%}）",
+            line={"color": "#dc2626", "dash": "dash"},
+        )
+    if ma_discount_pct is not None and "ma" in curve:
+        ma_discount_line = curve["ma"] * (1 - ma_discount_pct)
+        price.add_scatter(
+            x=dates, y=ma_discount_line, name=f"MA 下方幅度线（{ma_discount_pct:.0%}）",
+            line={"color": "#0f766e", "dash": "dash"},
+        )
     if "next_grid_price" in curve:
         price.add_scatter(x=dates, y=curve["next_grid_price"], name="下一补仓价格", line={"color": "#8b5cf6", "dash": "dot"})
 
@@ -43,7 +55,7 @@ def build_charts(curve, trades, lots=None, price_label="收盘价"):
             line={"width": 1, "dash": "dash"}, opacity=0.55, legendgroup="lot-costs",
             showlegend=True,
         )
-    price.update_layout(title="价格、MA、逐层成本与交易标记", template="plotly_white", hovermode="x unified")
+    price.update_layout(title="价格、MA、入场阈值线、逐层成本与交易标记", template="plotly_white", hovermode="x unified")
 
     drawdown = go.Figure(go.Scatter(
         x=dates, y=curve["drawdown"], fill="tozeroy", name="回撤", line={"color": "#dc2626"}
