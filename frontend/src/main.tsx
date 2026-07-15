@@ -23,6 +23,12 @@ const fmt = (v: any, pct = false) => v == null ? '—' : pct
   ? `${(Number(v) * 100).toFixed(2)}%`
   : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
 
+const holdingDaysForLot = (lot: any, endDate?: string) => {
+  const start = Date.parse(`${lot.buy_date}T00:00:00Z`);
+  const end = Date.parse(`${(lot.sell_date || endDate || lot.buy_date)}T00:00:00Z`);
+  return Number.isFinite(start) && Number.isFinite(end) ? Math.max(0, Math.round((end - start) / 86_400_000)) : 0;
+};
+
 const initial = {
   symbol: '513500', strategy: 'quality_grid', start_date: '2018-01-01', end_date: new Date().toISOString().slice(0, 10),
   initial_cash: 100000, monthly_contribution: 5000, contribution_day: 1, ma_window: 120,
@@ -114,14 +120,21 @@ function App() {
   }
 
   const quality = form.strategy === 'quality_grid';
+  const resultEndDate = result?.daily_equity?.[result.daily_equity.length - 1]?.date;
+  const holdingDurations = (result?.lots || []).map(lot => holdingDaysForLot(lot, resultEndDate));
+  const holdingStats = {
+    max: holdingDurations.length ? Math.max(...holdingDurations) : 0,
+    min: holdingDurations.length ? Math.min(...holdingDurations) : 0,
+    average: holdingDurations.length ? holdingDurations.reduce((sum, days) => sum + days, 0) / holdingDurations.length : 0,
+  };
   const cards = result && result.strategy === 'quality_grid' ? [
     { title: '已实现收益', key: 'realized_profit' }, { title: '未实现收益', key: 'unrealized_profit' },
     { title: '期末权益', key: 'ending_equity' }, { title: '总收益率', key: 'total_return', pct: true },
     { title: 'CAGR', key: 'cagr', pct: true }, { title: '最大回撤', key: 'max_drawdown', pct: true },
     { title: '夏普', key: 'sharpe_ratio' }, { title: '最大资金占用', key: 'max_strategy_cash_used' },
     { title: '已投入资金收益率', key: 'invested_capital_return', pct: true },
-    { title: '投入资金年化回报率', key: 'invested_capital_annualized_return', pct: true }, { title: '最长持仓', key: 'max_holding_days', suffix: ' 天' },
-    { title: '最短持仓', key: 'min_holding_days', suffix: ' 天' }, { title: '平均持仓', key: 'average_holding_days', suffix: ' 天' }, { title: '已完成轮次', key: 'completed_rounds' },
+    { title: '投入资金年化回报率', key: 'invested_capital_annualized_return', pct: true }, { title: '最长持仓', key: 'max_holding_days', value: holdingStats.max, suffix: ' 天' },
+    { title: '最短持仓', key: 'min_holding_days', value: holdingStats.min, suffix: ' 天' }, { title: '平均持仓', key: 'average_holding_days', value: holdingStats.average, suffix: ' 天' }, { title: '已完成轮次', key: 'completed_rounds' },
     { title: '未完成轮次', key: 'incomplete_rounds' }, { title: '当前现金', key: 'current_cash' },
     { title: '当前持仓市值', key: 'current_market_value' }, { title: '当前持仓数量', key: 'current_quantity' },
   ] : result ? [
@@ -206,7 +219,7 @@ function App() {
               <div><span className="meta-label">最后更新</span>{result.data_info.last_updated || '旧缓存未记录'}</div><div><span className="meta-label">成交模式</span>{result.execution_mode}</div>
             </div>
           </div>
-          <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(card => <div key={card.key} className="rounded-xl bg-white p-4 shadow-sm"><p className="m-0 text-xs text-slate-500">{card.title}</p><p className="mb-0 mt-2 text-xl font-bold">{fmt(result.metrics[card.key], card.pct)}{card.suffix || ''}</p>{card.key === 'max_drawdown' && <p className="hint">{result.metrics.max_drawdown_start} → {result.metrics.max_drawdown_end}</p>}</div>)}</div>
+          <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(card => <div key={card.key} className="rounded-xl bg-white p-4 shadow-sm"><p className="m-0 text-xs text-slate-500">{card.title}</p><p className="mb-0 mt-2 text-xl font-bold">{fmt(card.value ?? result.metrics[card.key], card.pct)}{card.suffix || ''}</p>{card.key === 'max_drawdown' && <p className="hint">{result.metrics.max_drawdown_start} → {result.metrics.max_drawdown_end}</p>}</div>)}</div>
           <div className="notice-blue mb-5">总账户收益会受到未投入现金影响。请同时查看最大资金占用和已投入资金收益率。</div>
           <div className="rounded-2xl bg-white p-5 shadow-sm">
             <div className="mb-3 flex gap-2 overflow-auto border-b">{[['equity','权益/现金/持仓'],['price','价格/MA/逐层'],['drawdown','回撤曲线']].map(([key,label]) => <button key={key} type="button" onClick={() => setTab(key)} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>{label}</button>)}</div>
@@ -216,7 +229,7 @@ function App() {
             <div className="mb-4 flex gap-2 overflow-auto border-b">{[['trades',`完整交易流水（${result.trades.length}）`],['lots',`Lot 明细（${result.lots?.length || 0}）`],['daily',`每日权益（${result.daily_equity?.length || 0}）`]].map(([key,label]) => <button key={key} type="button" onClick={() => setTableTab(key)} className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm ${tableTab === key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>{label}</button>)}</div>
             <div className="max-h-[520px] overflow-auto">
               {tableTab === 'trades' && <table><thead><tr><th>信号日</th><th>成交日</th><th>状态</th><th>方向</th><th>Lot</th><th>价格</th><th>数量</th><th>金额</th><th>佣金</th><th>税费</th><th>已实现盈亏</th><th>原因</th></tr></thead><tbody>{result.trades.map((t, i) => <tr key={i}><td>{t.signal_date || '—'}</td><td>{t.date}</td><td>{t.status === 'FILLED' ? '已成交' : '未成交'}</td><td className={t.side === 'BUY' ? 'text-green-600' : 'text-red-600'}>{t.side === 'BUY' ? '买入' : '卖出'}</td><td>{t.lot_id || '—'}</td><td>{fmt(t.price)}</td><td>{fmt(t.quantity)}</td><td>{fmt(t.notional)}</td><td>{fmt(t.commission)}</td><td>{fmt(t.tax)}</td><td>{fmt(t.realized_pnl)}</td><td className="min-w-52">{t.reason}</td></tr>)}</tbody></table>}
-              {tableTab === 'lots' && <table><thead><tr><th>Lot</th><th>轮次/层</th><th>买入日</th><th>持仓时间</th><th>买入价</th><th>数量</th><th>成本</th><th>卖出日</th><th>卖出价</th><th>收益率</th><th>状态</th><th>退出原因</th></tr></thead><tbody>{(result.lots || []).map(l => <tr key={l.lot_id}><td>{l.lot_id}</td><td>R{l.round_no} / L{l.layer_no}</td><td>{l.buy_date}</td><td>{l.holding_days ?? 0} 天</td><td>{fmt(l.buy_price)}</td><td>{fmt(l.quantity)}</td><td>{fmt(l.cost)}</td><td>{l.sell_date || '—'}</td><td>{fmt(l.sell_price)}</td><td>{fmt(l.return_pct, true)}</td><td>{l.status === 'OPEN' ? '未平仓' : '已平仓'}</td><td>{l.exit_reason || '期末保留'}</td></tr>)}</tbody></table>}
+              {tableTab === 'lots' && <table><thead><tr><th>Lot</th><th>轮次/层</th><th>买入日</th><th>持仓时间</th><th>买入价</th><th>数量</th><th>成本</th><th>卖出日</th><th>卖出价</th><th>收益率</th><th>状态</th><th>退出原因</th></tr></thead><tbody>{(result.lots || []).map(l => <tr key={l.lot_id}><td>{l.lot_id}</td><td>R{l.round_no} / L{l.layer_no}</td><td>{l.buy_date}</td><td>{holdingDaysForLot(l, resultEndDate)} 天</td><td>{fmt(l.buy_price)}</td><td>{fmt(l.quantity)}</td><td>{fmt(l.cost)}</td><td>{l.sell_date || '—'}</td><td>{fmt(l.sell_price)}</td><td>{fmt(l.return_pct, true)}</td><td>{l.status === 'OPEN' ? '未平仓' : '已平仓'}</td><td>{l.exit_reason || '期末保留'}</td></tr>)}</tbody></table>}
               {tableTab === 'daily' && <table><thead><tr><th>日期</th><th>收盘价</th><th>MA</th><th>现金</th><th>数量</th><th>持仓市值</th><th>账户权益</th><th>已实现</th><th>未实现</th><th>资金占用</th><th>层数</th><th>回撤</th></tr></thead><tbody>{(result.daily_equity || []).map(d => <tr key={d.date}><td>{d.date}</td><td>{fmt(d.price)}</td><td>{fmt(d.ma)}</td><td>{fmt(d.cash)}</td><td>{fmt(d.shares)}</td><td>{fmt(d.market_value)}</td><td>{fmt(d.equity)}</td><td>{fmt(d.realized_profit)}</td><td>{fmt(d.unrealized_profit)}</td><td>{fmt(d.invested_cost)}</td><td>{d.active_layers}</td><td>{fmt(d.drawdown, true)}</td></tr>)}</tbody></table>}
             </div>
           </div>
