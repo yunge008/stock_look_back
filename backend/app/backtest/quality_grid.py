@@ -44,7 +44,8 @@ def _entry_signal(row: pd.Series, req: BacktestRequest) -> bool:
 
 
 def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: int, has_open_round: bool,
-                       max_layers: int, last_final_exit_price: float | None, initial_cash: float) -> dict:
+                       max_layers: int, last_final_exit_price: float | None, initial_cash: float,
+                       lots: list[dict]) -> dict:
     values = curve["equity"].astype(float)
     drawdown = values / values.cummax() - 1
     daily = values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
@@ -68,6 +69,7 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
         if max_used > 0 and 1 + total_profit / max_used > 0
         else -1.0 if max_used > 0 else 0.0
     )
+    holding_days = [lot["holding_days"] for lot in lots]
     return {
         "realized_profit": float(realized),
         "unrealized_profit": float(last["unrealized_profit"]),
@@ -84,6 +86,9 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
         "invested_capital_return": float(total_profit / max_used) if max_used > 0 else 0.0,
         "invested_capital_annualized_return": float(invested_annualized),
         "invested_capital_occupied_days": invested_occupied_days,
+        "max_holding_days": max(holding_days, default=0),
+        "min_holding_days": min(holding_days, default=0),
+        "average_holding_days": float(np.mean(holding_days)) if holding_days else 0.0,
         "max_concurrent_layers": int(max_layers),
         "completed_rounds": int(completed_rounds),
         "incomplete_rounds": 1 if has_open_round else 0,
@@ -154,7 +159,7 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
                         "lot_id": lot_id, "round_no": round_no, "layer_no": layer_no, "buy_date": day,
                         "buy_price": actual_price, "quantity": qty, "cost": cost, "buy_commission": fee, "status": "OPEN",
                         "sell_date": None, "sell_price": None, "sell_commission": 0.0, "sell_tax": 0.0,
-                        "realized_pnl": None, "return_pct": None, "exit_reason": None,
+                        "realized_pnl": None, "return_pct": None, "exit_reason": None, "holding_days": 0,
                     })
                     if layer_no == 0:
                         current_round = round_no
@@ -182,6 +187,7 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
                         "status": "CLOSED", "sell_date": day, "sell_price": actual_price,
                         "sell_commission": fee, "sell_tax": tax, "realized_pnl": pnl,
                         "return_pct": pnl / lot["cost"] if lot["cost"] else 0.0, "exit_reason": order["reason"],
+                        "holding_days": (day - lot["buy_date"]).days,
                     })
                     exit_prices.append(actual_price)
                     trades.append(Trade(date=day, signal_date=order["signal_date"], side="SELL", price=actual_price,
@@ -263,6 +269,9 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
 
     curve = pd.DataFrame(rows)
     curve["drawdown"] = curve["equity"] / curve["equity"].cummax() - 1
+    final_day = curve["date"].iloc[-1]
+    for lot in open_lots():
+        lot["holding_days"] = (final_day - lot["buy_date"]).days
     metrics = _calculate_metrics(curve, realized, completed_rounds, bool(open_lots()), max_layers,
-                                 last_final_exit_price, req.max_strategy_cash)
+                                 last_final_exit_price, req.max_strategy_cash, lots)
     return metrics, trades, [LotRecord.model_validate(x) for x in lots], curve, list(dict.fromkeys(warnings))

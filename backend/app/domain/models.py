@@ -122,5 +122,4 @@ class LotRecord(BaseModel):
     realized_pnl: float | None = None
     return_pct: float | None = None
     exit_reason: str | None = None
-
-
+    holding_days: int = 0

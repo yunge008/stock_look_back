@@ -70,6 +70,7 @@ def init_db():
             "tax": "REAL NOT NULL DEFAULT 0", "cash_flow": "REAL NOT NULL DEFAULT 0", "realized_pnl": "REAL",
         }.items():
             _ensure_column(c, "backtest_trades", name, definition)
+        _ensure_column(c, "backtest_lots", "holding_days", "INTEGER NOT NULL DEFAULT 0")
 
 
 def _clean_number(value):
@@ -117,12 +118,13 @@ def save_run(req, metrics, chart, trades, data_info=None, lots=None, curve=None,
                 INSERT INTO backtest_lots(
                     backtest_id, lot_id, round_no, layer_no, buy_date, buy_price, quantity, cost,
                     buy_commission, status, sell_date, sell_price, sell_commission, sell_tax,
-                    realized_pnl, return_pct, exit_reason
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    realized_pnl, return_pct, exit_reason, holding_days
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ''', [(
                 run_id, lot.lot_id, lot.round_no, lot.layer_no, str(lot.buy_date), lot.buy_price,
                 lot.quantity, lot.cost, lot.buy_commission, lot.status, str(lot.sell_date) if lot.sell_date else None,
                 lot.sell_price, lot.sell_commission, lot.sell_tax, lot.realized_pnl, lot.return_pct, lot.exit_reason,
+                lot.holding_days,
             ) for lot in lots])
         if curve is not None and not curve.empty:
             c.executemany('''
@@ -164,7 +166,7 @@ def get_run(run_id: str):
         ''', (run_id,)).fetchall()
         lots = c.execute('''
             SELECT lot_id,round_no,layer_no,buy_date,buy_price,quantity,cost,buy_commission,status,
-                   sell_date,sell_price,sell_commission,sell_tax,realized_pnl,return_pct,exit_reason
+                   sell_date,sell_price,sell_commission,sell_tax,realized_pnl,return_pct,exit_reason,holding_days
             FROM backtest_lots WHERE backtest_id=? ORDER BY round_no,layer_no
         ''', (run_id,)).fetchall()
         equity = c.execute('''

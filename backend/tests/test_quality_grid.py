@@ -122,6 +122,10 @@ class QualityGridTests(unittest.TestCase):
         self.assertGreater(metrics["unrealized_profit"], 0)
         self.assertAlmostEqual(metrics["current_market_value"], curve.iloc[-1]["market_value"])
         self.assertEqual(metrics["incomplete_rounds"], 1)
+        self.assertEqual(lots[0].holding_days, 1)
+        self.assertEqual(metrics["max_holding_days"], 1)
+        self.assertEqual(metrics["min_holding_days"], 1)
+        self.assertEqual(metrics["average_holding_days"], 1.0)
 
 
 if __name__ == "__main__":
