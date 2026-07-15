@@ -44,8 +44,9 @@ def run_backtest(data: pd.DataFrame, req: BacktestRequest) -> tuple[dict, list[T
         ma, deviation = bar["ma"], bar["deviation"]
         reason = None; order_value = 0.0
         contribution_day = _is_contribution_day(day, req.contribution_day, monthly_seen)
+        external_cash_flow = 0.0
         if contribution_day:
-            account.cash += req.monthly_contribution; account.contributed += req.monthly_contribution
+            account.cash += req.monthly_contribution; account.contributed += req.monthly_contribution; external_cash_flow += req.monthly_contribution
         equity_before = account.cash + account.shares * price - account.borrowed
         if idx == 0 and account.cash > 0:
             order_value, reason = account.cash, "初始建仓"
@@ -56,7 +57,7 @@ def run_backtest(data: pd.DataFrame, req: BacktestRequest) -> tuple[dict, list[T
                 crossed_low = previous_deviation is not None and previous_deviation > req.lower_threshold and deviation <= req.lower_threshold
                 crossed_high = previous_deviation is not None and previous_deviation < req.upper_threshold and deviation >= req.upper_threshold
                 if crossed_low and req.extra_buy_amount:
-                    account.cash += req.extra_buy_amount; account.contributed += req.extra_buy_amount
+                    account.cash += req.extra_buy_amount; account.contributed += req.extra_buy_amount; external_cash_flow += req.extra_buy_amount
                     order_value, reason = req.extra_buy_amount, "低估加仓"
                 elif crossed_high:
                     order_value, reason = -account.shares * price * req.sell_ratio, "高估减仓"
@@ -84,7 +85,7 @@ def run_backtest(data: pd.DataFrame, req: BacktestRequest) -> tuple[dict, list[T
             repayment = min(account.cash, account.borrowed); account.cash -= repayment; account.borrowed -= repayment
             trades.append(Trade(date=day, side="SELL", price=price, quantity=qty, notional=value, reason=reason or "卖出"))
         market_value = account.shares * price; equity = account.cash + market_value - account.borrowed
-        rows.append({"date": day, "price": price, "ma": None if pd.isna(ma) else float(ma), "cash": account.cash, "borrowed_cash": account.borrowed, "shares": account.shares, "market_value": market_value, "equity": equity})
+        rows.append({"date": day, "price": price, "ma": None if pd.isna(ma) else float(ma), "cash": account.cash, "borrowed_cash": account.borrowed, "shares": account.shares, "market_value": market_value, "equity": equity, "external_cash_flow": external_cash_flow})
         previous_deviation = None if pd.isna(deviation) else float(deviation)
     curve = pd.DataFrame(rows); curve["drawdown"] = curve["equity"] / curve["equity"].cummax() - 1
     return _metrics(curve, trades, account.contributed), trades, curve

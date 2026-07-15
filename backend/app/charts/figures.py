@@ -3,17 +3,50 @@
 import plotly.graph_objects as go
 
 
+def _cash_flow_adjusted_nav(curve):
+    """Time-weighted strategy NAV; external deposits are excluded from return."""
+    equity = curve["equity"].astype(float).tolist()
+    flows = curve.get("external_cash_flow", 0)
+    flows = flows.astype(float).tolist() if hasattr(flows, "astype") else [0.0] * len(equity)
+    if not equity:
+        return []
+    nav = [1.0]
+    for index in range(1, len(equity)):
+        previous = equity[index - 1]
+        factor = (equity[index] - flows[index]) / previous if abs(previous) > 1e-9 else 1.0
+        nav.append(nav[-1] * factor)
+    return nav
+
+
+def _position_cost_drawdown(curve):
+    """Drawdown of the current holding segment, valued against active lot cost."""
+    invested = curve["invested_cost"].astype(float)
+    active = invested > 1e-9
+    position_nav = (curve["market_value"].astype(float) / invested).where(active)
+    segment = (~active).cumsum()
+    position_peak = position_nav.groupby(segment).cummax()
+    return (position_nav / position_peak - 1).where(active)
+
+
 def build_charts(curve, trades, lots=None, price_label="收盘价", entry_drawdown_pct=None, ma_discount_pct=None):
     lots = lots or []
     dates = curve["date"].astype(str).tolist()
 
     equity = go.Figure()
-    equity.add_scatter(x=dates, y=curve["equity"], name="账户权益", line={"color": "#2563eb", "width": 2})
+    equity.add_scatter(x=dates, y=curve["equity"], name="账户权益（含场外资金）", line={"color": "#2563eb", "width": 2})
     if "cash" in curve:
         equity.add_scatter(x=dates, y=curve["cash"], name="现金", line={"color": "#16a34a"})
     if "market_value" in curve:
         equity.add_scatter(x=dates, y=curve["market_value"], name="持仓市值", line={"color": "#f59e0b"})
-    equity.update_layout(title="账户权益、现金与持仓市值", template="plotly_white", yaxis_title="金额（元）", hovermode="x unified")
+    equity.add_scatter(
+        x=dates, y=_cash_flow_adjusted_nav(curve), yaxis="y2", name="策略净值（剔除场外现金流）",
+        line={"color": "#7c3aed", "width": 2, "dash": "dot"},
+    )
+    equity.update_layout(
+        title="账户权益、现金、持仓市值与资金流调整策略净值", template="plotly_white",
+        yaxis_title="金额（元）", yaxis2={"title": "策略净值", "overlaying": "y", "side": "right", "tickformat": ".1%"},
+        hovermode="x unified",
+    )
 
     price = go.Figure()
     price.add_scatter(x=dates, y=curve["price"], name=price_label, line={"color": "#334155", "width": 2})
@@ -61,16 +94,9 @@ def build_charts(curve, trades, lots=None, price_label="收盘价", entry_drawdo
         # Quality Grid drawdown is measured against the cost of lots actually
         # held on that day.  Idle cash and the configured cash-pool limit are
         # deliberately excluded.  Empty-position dates are gaps, not 0%.
-        invested = curve["invested_cost"].astype(float)
-        active = invested > 1e-9
-        # First normalize market value by the cost of lots held that day, then
-        # calculate drawdown from that position-return series' running peak.
-        # Reset the peak after every fully-flat period so separate rounds are
-        # not linked.  The resulting value is always <= 0 while in a position.
-        position_return = (curve["market_value"].astype(float) / invested - 1).where(active)
-        segment = (~active).cumsum()
-        position_peak = position_return.groupby(segment).cummax()
-        position_drawdown = (position_return / (1 + position_peak) - 1).where(active)
+        # Reset after each fully-flat period.  Use the position NAV itself,
+        # rather than its return, so drawdown cannot drop below -100%.
+        position_drawdown = _position_cost_drawdown(curve)
         drawdown = go.Figure(go.Scatter(
             x=dates, y=position_drawdown, mode="lines", connectgaps=False,
             name="持仓成本回撤", line={"color": "#dc2626"}

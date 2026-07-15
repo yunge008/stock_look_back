@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.charts.figures import build_charts
+from app.charts.figures import _cash_flow_adjusted_nav, _position_cost_drawdown, build_charts
 
 
 class ChartTests(unittest.TestCase):
@@ -29,5 +29,22 @@ class ChartTests(unittest.TestCase):
         self.assertIn("y", drawdown["data"][0])
 
 
+    def test_cash_flow_adjusted_nav_removes_external_deposit_jump(self):
+        curve = pd.DataFrame({
+            "equity": [100.0, 120.0, 170.0],
+            "external_cash_flow": [100.0, 0.0, 50.0],
+        })
+        self.assertEqual(_cash_flow_adjusted_nav(curve), [1.0, 1.2, 1.2])
+
+    def test_position_cost_drawdown_never_uses_return_as_nav(self):
+        curve = pd.DataFrame({
+            "invested_cost": [100.0, 100.0, 100.0],
+            "market_value": [100.0, 110.0, 90.0],
+        })
+        result = _position_cost_drawdown(curve)
+        self.assertAlmostEqual(result.iloc[0], 0.0)
+        self.assertAlmostEqual(result.iloc[1], 0.0)
+        self.assertAlmostEqual(result.iloc[2], 90 / 110 - 1)
+        self.assertGreaterEqual(result.min(), -1.0)
 if __name__ == "__main__":
     unittest.main()
