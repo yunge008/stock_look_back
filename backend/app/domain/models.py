@@ -20,7 +20,7 @@ class BacktestRequest(BaseModel):
     initial_cash: float = Field(default=100_000, ge=0)
     monthly_contribution: float = Field(default=5_000, ge=0)
     contribution_day: int = Field(default=1, ge=1, le=28)
-    ma_window: int = Field(default=120, ge=2, le=3000)
+    ma_window: int = Field(default=120, ge=1, le=3000)
     lower_threshold: float = Field(default=-0.05, ge=-0.9, le=0)
     upper_threshold: float = Field(default=0.05, ge=0, le=2)
     extra_buy_amount: float = Field(default=10_000, ge=0)
@@ -32,7 +32,7 @@ class BacktestRequest(BaseModel):
     max_strategy_cash: float = Field(default=200_000, gt=0)
     base_cash: float = Field(default=30_000, gt=0)
     quality_confirmed: bool = True
-    lookback_days: int = Field(default=360, ge=2, le=3000)
+    lookback_days: int = Field(default=360, ge=1, le=3000)
     entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
     ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
     entry_condition_mode: Literal["all", "any"] = "all"
@@ -70,8 +70,8 @@ class BacktestRequest(BaseModel):
 
 class TargetEntryRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=20)
-    lookback_days: int = Field(default=360, ge=2, le=3000)
-    ma_window: int = Field(default=120, ge=2, le=3000)
+    lookback_days: int = Field(default=360, ge=1, le=3000)
+    ma_window: int = Field(default=120, ge=1, le=3000)
     entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
     ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
     as_of_date: date | None = None

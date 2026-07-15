@@ -74,6 +74,10 @@ function App() {
   const setGrid = (key: 'grid_drop_pcts' | 'grid_cash_multipliers', index: number, value: number) => {
     const next = [...form[key]]; next[index] = value; setForm({ ...form, [key]: next });
   };
+  const resetDefaults = () => {
+    setForm({ ...initial, grid_drop_pcts: [...initial.grid_drop_pcts], grid_cash_multipliers: [...initial.grid_cash_multipliers] });
+    setTargetEntry(null); setInstrumentName(''); setError(''); setResult(null);
+  };
   async function lookupInstrument(symbolOverride?: string) {
     const symbol = String(symbolOverride ?? form.symbol ?? '').trim().toUpperCase();
     if (!symbol) { setInstrumentName(''); return; }
@@ -115,6 +119,15 @@ function App() {
       const response = await fetch(`${API}/backtests`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || '回测请求失败');
+      if (body.strategy === 'quality_grid' && body.data_info?.effective_start) {
+        setForm((current: any) => ({
+          ...current,
+          start_date: body.data_info.effective_start,
+          end_date: body.data_info.effective_end || current.end_date,
+          lookback_days: body.data_info.effective_lookback_days ?? current.lookback_days,
+          ma_window: body.data_info.effective_ma_window ?? current.ma_window,
+        }));
+      }
       setResult(body); setTab('equity');
     } catch (err: any) { setError(err.message === 'Failed to fetch' ? '无法连接回测后端。线上页面需要配置 VITE_API_BASE_URL 指向公网 FastAPI 服务；本地请先运行 backend/python main.py。' : err.message); } finally { setLoading(false); }
   }
@@ -155,6 +168,7 @@ function App() {
         <div className="grid gap-4">
           <div><label>股票 / ETF / 美股 / 港股代码</label><div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"><input name="symbol" type="text" value={form.symbol} onChange={change} onBlur={() => lookupInstrument()}/><span className="instrument-name">{instrumentName || "输入后识别名称"}</span></div><p className="hint">例如：600519、513500、AAPL、MSFT、BRK.B、00700、09988（美股 / 港股使用 Yahoo Finance；港股输入 5 位纯数字）</p></div>
           <button className="rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:bg-slate-400" disabled={loading}>{loading ? '正在获取行情、计算并保存…' : '开始回测'}</button>
+          <button type="button" onClick={resetDefaults} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">恢复默认设置</button>
           <div className="flex border-b border-slate-200">
             <button type="button" onClick={() => setSettingsTab('core')} className={`border-b-2 px-3 py-2 text-sm ${settingsTab === 'core' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>核心参数</button>
             <button type="button" onClick={() => setSettingsTab('settings')} className={`border-b-2 px-3 py-2 text-sm ${settingsTab === 'settings' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500'}`}>设置</button>
@@ -166,7 +180,7 @@ function App() {
             <div className="grid grid-cols-2 gap-3"><PercentField label="最高收盘回撤" name="entry_drawdown_pct" value={form.entry_drawdown_pct} setForm={setForm} form={form}/><PercentField label="低于 MA 幅度" name="ma_discount_pct" value={form.ma_discount_pct} setForm={setForm} form={form}/></div>
             <button type="button" onClick={() => fetchTargetEntry()} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:text-slate-400" disabled={targetLoading}>{targetLoading ? '正在测算目标买点…' : '立即重算最新目标买点'}</button>
             <p className="hint -mt-2">输入有效代码后会自动测算；修改核心参数后可在此立即重算。</p>
-            {targetEntry && <div className="target-card"><p className="m-0 text-xs font-semibold text-blue-700">最新目标买点（{targetEntry.as_of_date}）</p><p className="my-1 text-2xl font-bold text-blue-900">{fmt(targetEntry.target_buy_price)}</p><p className="m-0 text-xs text-slate-600">最高收盘回撤价 {fmt(targetEntry.drawdown_buy_price)} · MA 下方价 {fmt(targetEntry.ma_buy_price)}</p><p className={`mb-0 mt-2 text-xs font-semibold ${targetEntry.conditions_met ? 'text-green-700' : 'text-amber-700'}`}>{targetEntry.conditions_met ? '当前收盘价已同时满足两个入场条件。' : `当前收盘价距目标买点高 ${fmt(targetEntry.distance_to_target_pct, true)}。`}</p></div>}
+            {targetEntry && <div className="target-card"><p className="m-0 text-xs font-semibold text-blue-700">最新目标买点（{targetEntry.as_of_date}）</p><p className="my-1 text-2xl font-bold text-blue-900">{fmt(targetEntry.target_buy_price)}</p><p className="m-0 text-xs text-slate-600">最高收盘回撤价 {fmt(targetEntry.drawdown_buy_price)} · MA 下方价 {fmt(targetEntry.ma_buy_price)}</p>{targetEntry.history_adjusted && <p className="mb-0 mt-2 text-xs text-amber-700">历史数据不足，已按可用日线使用回撤 {targetEntry.effective_lookback_days} 日、MA {targetEntry.effective_ma_window} 日测算。</p>}<p className={`mb-0 mt-2 text-xs font-semibold ${targetEntry.conditions_met ? 'text-green-700' : 'text-amber-700'}`}>{targetEntry.conditions_met ? '当前收盘价已同时满足两个入场条件。' : `当前收盘价距目标买点高 ${fmt(targetEntry.distance_to_target_pct, true)}。`}</p></div>}
           </> : <>
             <div><label>策略</label><select name="strategy" value={form.strategy} onChange={change}>
               <option value="quality_grid">质量过滤逐笔网格</option><option value="dca">普通定投</option><option value="ma_band">MA 趋势策略</option><option value="dynamic">动态仓位策略</option>
