@@ -44,7 +44,7 @@ AkShare、回测和 SQLite 均在本地 FastAPI 中运行；前端仅调用 `htt
 - `backtest_lots`
 - `backtest_daily_equity`
 
-修改 schema 时要兼容已有 SQLite 文件，并新增对应持久化与读取测试。
+修改 schema 时要兼容已有 SQLite 文件，并新增对应持久化与读取测试。`r`n- 投入资金年化回报率只累计 `invested_cost > 0` 的持仓交易日；空仓等待期不得计入。
 
 ## 修改前检查
 

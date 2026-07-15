@@ -59,9 +59,12 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
     last = curve.iloc[-1]
     max_used = float(curve["invested_cost"].max())
     total_profit = realized + float(last["unrealized_profit"])
-    # Annualize the return on the maximum capital actually occupied by open lots.
+    # Count only daily bars that end with open lots. Empty waiting periods do not
+    # dilute this return, while an exit executed at the next open ends occupancy.
+    invested_occupied_days = int((curve["invested_cost"] > 1e-9).sum())
+    invested_years = max(invested_occupied_days / 365.25, 1 / 365.25) if max_used > 0 else 0.0
     invested_annualized = (
-        (1 + total_profit / max_used) ** (1 / years) - 1
+        (1 + total_profit / max_used) ** (1 / invested_years) - 1
         if max_used > 0 and 1 + total_profit / max_used > 0
         else -1.0 if max_used > 0 else 0.0
     )
@@ -80,6 +83,7 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
         "max_strategy_cash_used": max_used,
         "invested_capital_return": float(total_profit / max_used) if max_used > 0 else 0.0,
         "invested_capital_annualized_return": float(invested_annualized),
+        "invested_capital_occupied_days": invested_occupied_days,
         "max_concurrent_layers": int(max_layers),
         "completed_rounds": int(completed_rounds),
         "incomplete_rounds": 1 if has_open_round else 0,

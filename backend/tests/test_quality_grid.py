@@ -111,6 +111,7 @@ class QualityGridTests(unittest.TestCase):
         data = bars([120, 100, 100, 102], [120, 100, 101, 102])
         metrics, _, _, _, _ = run_quality_grid(data, request(), "etf")
         self.assertIn("invested_capital_annualized_return", metrics)
+        self.assertEqual(metrics["invested_capital_occupied_days"], 2)
         self.assertGreater(metrics["invested_capital_annualized_return"], metrics["invested_capital_return"])
     def test_open_lot_is_not_forced_closed_at_end(self):
         data = bars([120, 100, 100, 102], [120, 100, 101, 102])
