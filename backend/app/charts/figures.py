@@ -62,11 +62,20 @@ def build_charts(curve, trades, lots=None, price_label="收盘价", entry_drawdo
         # held on that day.  Idle cash and the configured cash-pool limit are
         # deliberately excluded.  Empty-position dates are gaps, not 0%.
         invested = curve["invested_cost"].astype(float)
-        position_drawdown = (curve["market_value"].astype(float) / invested - 1).where(invested > 1e-9)
+        active = invested > 1e-9
+        # First normalize market value by the cost of lots held that day, then
+        # calculate drawdown from that position-return series' running peak.
+        # Reset the peak after every fully-flat period so separate rounds are
+        # not linked.  The resulting value is always <= 0 while in a position.
+        position_return = (curve["market_value"].astype(float) / invested - 1).where(active)
+        segment = (~active).cumsum()
+        position_peak = position_return.groupby(segment).cummax()
+        position_drawdown = (position_return / (1 + position_peak) - 1).where(active)
         drawdown = go.Figure(go.Scatter(
-            x=dates, y=position_drawdown, fill="tozeroy", name="持仓成本回撤", line={"color": "#dc2626"}
+            x=dates, y=position_drawdown, mode="lines", connectgaps=False,
+            name="持仓成本回撤", line={"color": "#dc2626"}
         ))
-        drawdown_title = "持仓成本回撤曲线（按当时未平仓 Lot 总成本）"
+        drawdown_title = "持仓成本回撤曲线（相对持仓成本收益率高点）"
     else:
         drawdown = go.Figure(go.Scatter(
             x=dates, y=curve["drawdown"], fill="tozeroy", name="回撤", line={"color": "#dc2626"}

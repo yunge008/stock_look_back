@@ -29,20 +29,20 @@ class BacktestRequest(BaseModel):
     rebalance_tolerance: float = Field(default=0.01, ge=0, le=0.5)
 
     # Quality Grid / 质量过滤逐笔网格
-    max_strategy_cash: float = Field(default=1_000_000, gt=0)
-    base_cash: float = Field(default=20_000, gt=0)
+    max_strategy_cash: float = Field(default=200_000, gt=0)
+    base_cash: float = Field(default=30_000, gt=0)
     quality_confirmed: bool = True
     lookback_days: int = Field(default=360, ge=2, le=3000)
     entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
     ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
     entry_condition_mode: Literal["all", "any"] = "all"
     grid_drop_pcts: list[float] = Field(default_factory=lambda: [0.05, 0.10, 0.15, 0.20], min_length=4, max_length=4)
-    grid_cash_multipliers: list[float] = Field(default_factory=lambda: [1.0, 2.0, 2.0, 2.0], min_length=4, max_length=4)
-    lot_take_profit_pct: float = Field(default=0.05, gt=0, lt=5)
-    basket_take_profit_enabled: bool = True
+    grid_cash_multipliers: list[float] = Field(default_factory=lambda: [1.0, 2.0, 2.0, 3.0], min_length=4, max_length=4)
+    lot_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
+    basket_take_profit_enabled: bool = False
     basket_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
-    reentry_drop_pct: float = Field(default=0.05, ge=0, lt=1)
-    commission_rate: float = Field(default=0.0003, ge=0, lt=0.1)
+    reentry_drop_pct: float = Field(default=0, ge=0, lt=1)
+    commission_rate: float = Field(default=0.0005, ge=0, lt=0.1)
     min_commission: float = Field(default=5.0, ge=0)
     sell_tax_rate: float = Field(default=0.001, ge=0, lt=0.1)
     slippage_pct: float = Field(default=0.0005, ge=0, lt=0.1)

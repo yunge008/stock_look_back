@@ -24,7 +24,7 @@ class ChartTests(unittest.TestCase):
         self.assertIn("最高收盘回撤线（30%）", trace_names)
         self.assertIn("MA 下方幅度线（15%）", trace_names)
         drawdown = charts["drawdown"]
-        self.assertEqual(drawdown["layout"]["title"]["text"], "持仓成本回撤曲线（按当时未平仓 Lot 总成本）")
+        self.assertEqual(drawdown["layout"]["title"]["text"], "持仓成本回撤曲线（相对持仓成本收益率高点）")
         self.assertEqual(drawdown["data"][0]["name"], "持仓成本回撤")
         self.assertIn("y", drawdown["data"][0])
 
