@@ -4,6 +4,7 @@ from functools import lru_cache
 import re
 import json
 from pathlib import Path
+from threading import RLock
 
 import pandas as pd
 
@@ -11,6 +12,12 @@ from app.core.config import DATA_CACHE_DIR
 
 SINA_FALLBACK_WARNING = "当前使用新浪备用日线，未提供复权序列，回测以收盘价作为价格依据。"
 A_STOCK_SINA_WARNING = "当前使用新浪备用 A 股日线（前复权 qfq）。请注意不同数据源的复权因子可能存在差异。"
+HK_EASTMONEY_FALLBACK_WARNING = "Yahoo Finance 港股日线暂不可用，当前使用东方财富港股前复权日线。港股整手数因标的而异，仍按 1 股最小单位模拟。"
+HK_SINA_FALLBACK_WARNING = "Yahoo Finance 与东方财富港股日线暂不可用，当前使用新浪港股前复权日线。港股整手数因标的而异，仍按 1 股最小单位模拟。"
+
+# AkShare may enter py_mini_racer/V8 for Sina decoding. The embedded V8 runtime
+# is not safe to initialize concurrently in multiple FastAPI worker threads.
+_PROVIDER_LOCK = RLock()
 
 
 class MarketDataError(RuntimeError):
@@ -38,8 +45,7 @@ def yahoo_symbol(symbol: str) -> str:
         return normalized
     return f"{normalized.lstrip('0').zfill(4)}.HK"
 
-@lru_cache(maxsize=1024)
-def instrument_name(symbol: str) -> str | None:
+def _instrument_name_unlocked(symbol: str) -> str | None:
     """Best-effort display name lookup; failures must never block a backtest."""
     try:
         import akshare as ak
@@ -92,6 +98,12 @@ def instrument_name(symbol: str) -> str | None:
     except Exception:
         return None
     return None
+
+@lru_cache(maxsize=1024)
+def instrument_name(symbol: str) -> str | None:
+    with _PROVIDER_LOCK:
+        return _instrument_name_unlocked(symbol)
+
 
 def _cache_file(symbol: str) -> Path:
     DATA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -161,14 +173,44 @@ def _fetch_yahoo_finance(symbol: str, start: date, end: date) -> tuple[pd.DataFr
 
 def _fetch_akshare(symbol: str, start: date, end: date) -> tuple[pd.DataFrame, dict]:
     kind = instrument_type(symbol)
-    if kind in {"us_stock", "hk_stock"}:
+    yahoo_error = None
+    if kind == "us_stock":
         return _fetch_yahoo_finance(symbol, start, end)
+    if kind == "hk_stock":
+        try:
+            return _fetch_yahoo_finance(symbol, start, end)
+        except MarketDataError as exc:
+            yahoo_error = exc
     try:
         import akshare as ak
 
         kind = instrument_type(symbol)
         warning = None
-        if kind == "etf":
+        if kind == "hk_stock":
+            try:
+                raw = ak.stock_hk_hist(
+                    symbol=symbol, period="daily", start_date=start.strftime("%Y%m%d"),
+                    end_date=end.strftime("%Y%m%d"), adjust="qfq",
+                )
+                if raw.empty:
+                    raise ValueError("Eastmoney returned no data")
+                source, price_type, warning = (
+                    "AkShare / 东方财富港股备用", "前复权(qfq)", HK_EASTMONEY_FALLBACK_WARNING,
+                )
+            except Exception as eastmoney_error:
+                try:
+                    raw = ak.stock_hk_daily(symbol=symbol, adjust="qfq")
+                    if raw.empty:
+                        raise ValueError("Sina returned no data")
+                    source, price_type, warning = (
+                        "AkShare / 新浪港股备用", "前复权(qfq)", HK_SINA_FALLBACK_WARNING,
+                    )
+                except Exception as sina_error:
+                    raise MarketDataError(
+                        f"港股行情不可用。Yahoo Finance：{yahoo_error}；"
+                        f"东方财富：{eastmoney_error}；新浪：{sina_error}"
+                    ) from sina_error
+        elif kind == "etf":
             try:
                 raw = ak.fund_etf_hist_em(
                     symbol=symbol, period="daily", start_date=start.strftime("%Y%m%d"),
@@ -245,7 +287,7 @@ def _read_metadata(symbol: str) -> dict:
     }
 
 
-def get_history(symbol: str, start: date, end: date) -> pd.DataFrame:
+def _get_history_unlocked(symbol: str, start: date, end: date) -> pd.DataFrame:
     if start > end:
         raise MarketDataError("开始日期不能晚于结束日期。")
     requested_start = start - timedelta(days=1200)
@@ -285,3 +327,7 @@ def get_history(symbol: str, start: date, end: date) -> pd.DataFrame:
     }
     result.attrs["metadata"] = metadata
     return result
+
+def get_history(symbol: str, start: date, end: date) -> pd.DataFrame:
+    with _PROVIDER_LOCK:
+        return _get_history_unlocked(symbol, start, end)

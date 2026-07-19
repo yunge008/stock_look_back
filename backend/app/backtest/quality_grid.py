@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 
-from app.core.config import RISK_FREE_RATE
+from app.core.config import RISK_FREE_RATE, TRADING_DAYS_PER_YEAR
 from app.domain.models import BacktestRequest, LotRecord, Trade
 
 
@@ -49,12 +49,12 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
     values = curve["equity"].astype(float)
     drawdown = values / values.cummax() - 1
     daily = values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
-    years = max((curve["date"].iloc[-1] - curve["date"].iloc[0]).days / 365.25, 1 / 365.25)
+    years = max((len(curve) - 1) / TRADING_DAYS_PER_YEAR, 1 / TRADING_DAYS_PER_YEAR)
     ending = float(values.iloc[-1])
     total_return = ending / initial_cash - 1 if initial_cash else 0.0
     cagr = (ending / initial_cash) ** (1 / years) - 1 if initial_cash > 0 and ending > 0 else -1.0
-    volatility = float(daily.std(ddof=1) * math.sqrt(252)) if len(daily) > 1 else 0.0
-    sharpe = (float(daily.mean()) * 252 - RISK_FREE_RATE) / volatility if volatility > 0 else None
+    volatility = float(daily.std(ddof=1) * math.sqrt(TRADING_DAYS_PER_YEAR)) if len(daily) > 1 else 0.0
+    sharpe = (float(daily.mean()) * TRADING_DAYS_PER_YEAR - RISK_FREE_RATE) / volatility if volatility > 0 else None
     trough_pos = int(np.argmin(drawdown.to_numpy()))
     peak_pos = int(np.argmax(values.iloc[:trough_pos + 1].to_numpy()))
     last = curve.iloc[-1]
@@ -63,13 +63,16 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
     # Count only daily bars that end with open lots. Empty waiting periods do not
     # dilute this return, while an exit executed at the next open ends occupancy.
     invested_occupied_days = int((curve["invested_cost"] > 1e-9).sum())
-    invested_years = max(invested_occupied_days / 365.25, 1 / 365.25) if max_used > 0 else 0.0
+    invested_years = max(invested_occupied_days / TRADING_DAYS_PER_YEAR, 1 / TRADING_DAYS_PER_YEAR) if max_used > 0 else 0.0
     invested_annualized = (
         (1 + total_profit / max_used) ** (1 / invested_years) - 1
         if max_used > 0 and 1 + total_profit / max_used > 0
         else -1.0 if max_used > 0 else 0.0
     )
     holding_days = [lot["holding_days"] for lot in lots]
+    closed_pnls = [float(lot["realized_pnl"]) for lot in lots if lot["status"] == "CLOSED"]
+    open_pnls = [float(last["price"] * lot["quantity"] - lot["cost"]) for lot in lots if lot["status"] == "OPEN"]
+    all_pnls = closed_pnls + open_pnls
     return {
         "realized_profit": float(realized),
         "unrealized_profit": float(last["unrealized_profit"]),
@@ -89,6 +92,10 @@ def _calculate_metrics(curve: pd.DataFrame, realized: float, completed_rounds: i
         "max_holding_days": max(holding_days, default=0),
         "min_holding_days": min(holding_days, default=0),
         "average_holding_days": float(np.mean(holding_days)) if holding_days else 0.0,
+        "win_rate_closed_only": sum(pnl > 0 for pnl in closed_pnls) / len(closed_pnls) if closed_pnls else None,
+        "win_rate_all_lots": sum(pnl > 0 for pnl in all_pnls) / len(all_pnls) if all_pnls else None,
+        "open_lot_count": len(open_pnls),
+        "open_lot_ratio": len(open_pnls) / len(lots) if lots else 0.0,
         "max_concurrent_layers": int(max_layers),
         "completed_rounds": int(completed_rounds),
         "incomplete_rounds": 1 if has_open_round else 0,
@@ -213,11 +220,20 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
                 pct = req.basket_take_profit_pct * 100
                 pending = [{"side": "SELL", "lot_id": x["lot_id"], "signal_date": day, "reason": f"组合+{pct:g}%清仓"} for x in active]
             else:
-                hit_lots = [x for x in active if price + 1e-10 >= (x["cost"] / x["quantity"]) * (1 + req.lot_take_profit_pct)]
+                hit_lots: list[tuple[dict, float]] = []
+                for lot in active:
+                    holding_days = max((day - lot["buy_date"]).days, 0)
+                    decay_periods = holding_days // req.holding_profit_decay_days
+                    required_profit_pct = max(
+                        req.lot_take_profit_pct - decay_periods * req.holding_profit_decay_pct,
+                        0.0,
+                    )
+                    if price + 1e-10 >= (lot["cost"] / lot["quantity"]) * (1 + required_profit_pct):
+                        hit_lots.append((lot, required_profit_pct))
                 if hit_lots:
-                    pct = req.lot_take_profit_pct * 100
-                    pending = [{"side": "SELL", "lot_id": x["lot_id"], "signal_date": day,
-                                "reason": f'Lot {x["lot_id"]} +{pct:g}%止盈'} for x in hit_lots]
+                    pending = [{"side": "SELL", "lot_id": lot["lot_id"], "signal_date": day,
+                                "reason": f'Lot {lot["lot_id"]} +{required_pct * 100:g}%止盈'}
+                               for lot, required_pct in hit_lots]
                 elif anchor_price is not None:
                     for layer_no, drop in enumerate(req.grid_drop_pcts, start=1):
                         if layer_no not in triggered_layers and price <= anchor_price * (1 - drop):
@@ -247,13 +263,13 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
         unrealized = market_value - invested_cost
         next_grid = None
         if anchor_price is not None:
-            next_layer = next((i for i in range(1, 5) if i not in triggered_layers), None)
+            next_layer = next((i for i in range(1, len(req.grid_drop_pcts) + 1) if i not in triggered_layers), None)
             if next_layer is not None:
                 next_grid = anchor_price * (1 - req.grid_drop_pcts[next_layer - 1])
         rows.append({
             "date": day, "price": price, "ma": None if pd.isna(bar["ma"]) else float(bar["ma"]),
             "rolling_high": None if pd.isna(bar["rolling_high"]) else float(bar["rolling_high"]),
-            "cash": cash, "shares": shares, "market_value": market_value, "equity": cash + market_value,
+            "cash": cash, "shares": shares, "market_value": market_value, "holding_market_value": market_value, "equity": cash + market_value,
             "realized_profit": realized, "unrealized_profit": unrealized, "invested_cost": invested_cost,
             "active_layers": len(active), "anchor_price": anchor_price, "next_grid_price": next_grid,
         })
@@ -267,9 +283,40 @@ def run_quality_grid(data: pd.DataFrame, req: BacktestRequest, instrument_kind: 
         ))
         warnings.append(f'{order["signal_date"]} {order["reason"]}：无下一交易日，未成交。')
 
+    final_day = frame["date"].iloc[-1]
+    if req.force_close_at_end and open_lots():
+        final_close = float(frame["price"].iloc[-1]) * (1 - req.slippage_pct)
+        for lot in list(open_lots()):
+            notional = lot["quantity"] * final_close
+            fee = _commission(notional, req)
+            tax = notional * req.sell_tax_rate
+            proceeds = notional - fee - tax
+            pnl = proceeds - lot["cost"]
+            cash += proceeds
+            realized += pnl
+            lot.update({
+                "status": "CLOSED", "sell_date": final_day, "sell_price": final_close,
+                "sell_commission": fee, "sell_tax": tax, "realized_pnl": pnl,
+                "return_pct": pnl / lot["cost"] if lot["cost"] else 0.0,
+                "exit_reason": "回测到期强制平仓", "holding_days": (final_day - lot["buy_date"]).days,
+            })
+            trades.append(Trade(
+                date=final_day, signal_date=final_day, side="SELL", price=final_close,
+                quantity=lot["quantity"], notional=notional, reason="回测到期强制平仓",
+                lot_id=lot["lot_id"], round_no=lot["round_no"], layer_no=lot["layer_no"],
+                commission=fee, tax=tax, cash_flow=proceeds, realized_pnl=pnl,
+            ))
+        completed_rounds += 1
+        last_final_exit_price = final_close
+        current_round, anchor_price, triggered_layers = None, None, set()
+        rows[-1].update({
+            "cash": cash, "shares": 0.0, "market_value": 0.0, "equity": cash,
+            "realized_profit": realized, "unrealized_profit": 0.0, "invested_cost": 0.0,
+            "active_layers": 0, "anchor_price": None, "next_grid_price": None,
+        })
+
     curve = pd.DataFrame(rows)
     curve["drawdown"] = curve["equity"] / curve["equity"].cummax() - 1
-    final_day = curve["date"].iloc[-1]
     for lot in open_lots():
         lot["holding_days"] = (final_day - lot["buy_date"]).days
     metrics = _calculate_metrics(curve, realized, completed_rounds, bool(open_lots()), max_layers,

@@ -79,6 +79,22 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(meta["instrument_type"], "hk_stock")
         self.assertIn("整手数", meta["warning"])
         self.assertEqual(list(frame["close"]), [301.0, 303.0])
+    def test_hk_stock_falls_back_to_sina_when_yahoo_and_eastmoney_fail(self):
+        sina = pd.DataFrame({
+            "date": ["2024-01-02", "2024-01-03"], "open": [300.0, 302.0],
+            "high": [303.0, 304.0], "low": [299.0, 301.0],
+            "close": [301.0, 303.0], "volume": [1000, 1200],
+        })
+        with patch.object(provider, "_fetch_yahoo_finance", side_effect=provider.MarketDataError("Yahoo empty")), \
+             patch("akshare.stock_hk_hist", side_effect=RuntimeError("eastmoney down")), \
+             patch("akshare.stock_hk_daily", return_value=sina) as fallback:
+            frame, meta = provider._fetch_akshare("00700", date(2024, 1, 1), date(2024, 1, 3))
+        fallback.assert_called_once_with(symbol="00700", adjust="qfq")
+        self.assertEqual(meta["source"], "AkShare / 新浪港股备用")
+        self.assertEqual(meta["price_type"], "前复权(qfq)")
+        self.assertEqual(meta["warning"], provider.HK_SINA_FALLBACK_WARNING)
+        self.assertEqual(list(frame["close"]), [301.0, 303.0])
+
     def test_us_stock_uses_yahoo_finance_adjusted_history(self):
         raw = pd.DataFrame({
             "Open": [100.0, 101.0], "High": [101.0, 102.0], "Low": [99.0, 100.0],

@@ -89,7 +89,7 @@ def execute(req, persist=True):
         "id": run_id,
         "symbol": req.symbol,
         "strategy": req.strategy,
-        "execution_mode": "下一交易日开盘价" if req.strategy == StrategyType.QUALITY_GRID else "原策略口径",
+        "execution_mode": ("下一交易日开盘价；期末按最后收盘价强制平仓" if req.force_close_at_end else "下一交易日开盘价") if req.strategy == StrategyType.QUALITY_GRID else ("原策略口径；期末强制平仓" if req.force_close_at_end else "原策略口径"),
         "metrics": metrics,
         "trades": [t.model_dump(mode="json") for t in trades],
         "lots": [lot.model_dump(mode="json") for lot in lots],

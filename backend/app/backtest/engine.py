@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 from app.domain.models import BacktestRequest, StrategyType, Trade
-from app.core.config import RISK_FREE_RATE
+from app.core.config import RISK_FREE_RATE, TRADING_DAYS_PER_YEAR
 
 @dataclass
 class Account:
@@ -22,9 +22,9 @@ def _metrics(equity: pd.DataFrame, trades: list[Trade], contributed: float) -> d
     values = equity["equity"].astype(float)
     drawdown = values / values.cummax() - 1
     daily = values.pct_change().replace([np.inf, -np.inf], np.nan).dropna()
-    years = max((equity["date"].iloc[-1] - equity["date"].iloc[0]).days / 365.25, 1 / 365.25)
+    years = max((len(equity) - 1) / TRADING_DAYS_PER_YEAR, 1 / TRADING_DAYS_PER_YEAR)
     cagr = (values.iloc[-1] / max(contributed, 1e-9)) ** (1 / years) - 1 if values.iloc[-1] > 0 else -1
-    vol = daily.std(ddof=1) * math.sqrt(252) if len(daily) > 1 else 0.0
+    vol = daily.std(ddof=1) * math.sqrt(TRADING_DAYS_PER_YEAR) if len(daily) > 1 else 0.0
     sharpe = (cagr - RISK_FREE_RATE) / vol if vol > 0 else None
     trough = int(drawdown.idxmin())
     peak = int(values.iloc[:trough + 1].idxmax())
@@ -87,5 +87,23 @@ def run_backtest(data: pd.DataFrame, req: BacktestRequest) -> tuple[dict, list[T
         market_value = account.shares * price; equity = account.cash + market_value - account.borrowed
         rows.append({"date": day, "price": price, "ma": None if pd.isna(ma) else float(ma), "cash": account.cash, "borrowed_cash": account.borrowed, "shares": account.shares, "market_value": market_value, "equity": equity, "external_cash_flow": external_cash_flow})
         previous_deviation = None if pd.isna(deviation) else float(deviation)
+    if req.force_close_at_end and account.shares > 0:
+        final_day = rows[-1]["date"]
+        final_price = float(rows[-1]["price"])
+        quantity = account.shares
+        notional = quantity * final_price
+        account.shares = 0.0
+        account.cash += notional
+        repayment = min(account.cash, account.borrowed)
+        account.cash -= repayment
+        account.borrowed -= repayment
+        trades.append(Trade(
+            date=final_day, signal_date=final_day, side="SELL", price=final_price,
+            quantity=quantity, notional=notional, reason="回测到期强制平仓",
+        ))
+        rows[-1].update({
+            "cash": account.cash, "borrowed_cash": account.borrowed, "shares": 0.0,
+            "market_value": 0.0, "equity": account.cash - account.borrowed,
+        })
     curve = pd.DataFrame(rows); curve["drawdown"] = curve["equity"] / curve["equity"].cummax() - 1
     return _metrics(curve, trades, account.contributed), trades, curve

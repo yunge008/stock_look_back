@@ -2,8 +2,8 @@
 @theme { --color-ink: #172033; --color-brand: #2563eb; }
 html, body, #root { max-width: 100%; overflow-x: hidden; }
 body { margin: 0; min-width: 320px; background: #f6f8fc; color: #172033; font-family: Inter, "Microsoft YaHei", sans-serif; }
-input, select { width: 100%; border: 1px solid #d8dee9; border-radius: .5rem; padding: .6rem .7rem; box-sizing: border-box; background: white; }
-input:focus, select:focus { outline: 2px solid #bfdbfe; border-color: #2563eb; }
+input, select, textarea { width: 100%; border: 1px solid #d8dee9; border-radius: .5rem; padding: .6rem .7rem; box-sizing: border-box; background: white; }
+input:focus, select:focus, textarea:focus { outline: 2px solid #bfdbfe; border-color: #2563eb; }
 label { display: block; font-size: .75rem; font-weight: 600; color: #475569; margin-bottom: .3rem; }
 .hint { margin: .3rem 0 0; color: #64748b; font-size: .7rem; line-height: 1.45; }
 .toggle { display: flex; align-items: flex-start; gap: .5rem; font-size: .8rem; line-height: 1.35; cursor: pointer; }

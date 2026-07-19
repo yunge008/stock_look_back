@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
@@ -34,13 +34,65 @@ def request(**updates):
         grid_cash_multipliers=[1, 1, 1, 1], lot_take_profit_pct=0.05,
         basket_take_profit_enabled=False, basket_take_profit_pct=0.10, reentry_drop_pct=0.05,
         commission_rate=0, min_commission=0, sell_tax_rate=0, slippage_pct=0,
-        allow_fractional_etf=True,
+        allow_fractional_etf=True, force_close_at_end=False,
     )
     base.update(updates)
     return BacktestRequest(**base)
 
 
 class QualityGridTests(unittest.TestCase):
+    def test_defaults_support_five_layers_and_cash_plan(self):
+        req = BacktestRequest(
+            symbol="513500",
+            strategy=StrategyType.QUALITY_GRID,
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 12, 31),
+        )
+        self.assertEqual(req.grid_drop_pcts, [0.10, 0.20, 0.30, 0.40, 0.50])
+        self.assertEqual(req.grid_cash_multipliers, [1, 2, 2, 3, 3])
+        self.assertAlmostEqual(req.base_cash, req.max_strategy_cash / (1 + sum(req.grid_cash_multipliers)))
+        self.assertFalse(req.basket_take_profit_enabled)
+        self.assertEqual(req.reentry_drop_pct, 0)
+        self.assertEqual(req.commission_rate, 0.05)
+        self.assertEqual(req.min_commission, 5)
+        self.assertEqual(req.slippage_pct, 0.05)
+        self.assertEqual(req.holding_profit_decay_days, 365)
+        self.assertEqual(req.holding_profit_decay_pct, 0.01)
+        self.assertTrue(req.force_close_at_end)
+
+    def test_three_layer_configuration_is_valid(self):
+        req = request(
+            grid_drop_pcts=[0.10, 0.20, 0.30],
+            grid_cash_multipliers=[1, 2, 2],
+        )
+        self.assertEqual(len(req.grid_drop_pcts), 3)
+
+    def test_holding_time_reduces_lot_profit_requirement(self):
+        data = bars(
+            [100, 100, 100, 109, 109],
+            [100, 100, 100, 109, 109],
+        )
+        data["date"] = [
+            date(2023, 1, 1), date(2023, 1, 2), date(2023, 1, 3),
+            date(2024, 1, 3), date(2024, 1, 4),
+        ]
+        _, trades, lots, _, _ = run_quality_grid(
+            data,
+            request(
+                start_date=date(2023, 1, 1),
+                entry_drawdown_pct=0,
+                ma_discount_pct=0,
+                lot_take_profit_pct=0.10,
+                holding_profit_decay_days=365,
+                holding_profit_decay_pct=0.01,
+            ),
+            "etf",
+        )
+        sells = [trade for trade in trades if trade.side == "SELL" and trade.status == "FILLED"]
+        self.assertEqual(len(sells), 1)
+        self.assertIn("+9%止盈", sells[0].reason)
+        self.assertEqual(lots[0].status, "CLOSED")
+
     def test_each_lot_exits_once_and_in_full(self):
         data = bars(
             [120, 100, 100, 95, 99.75, 100, 105],
@@ -113,6 +165,20 @@ class QualityGridTests(unittest.TestCase):
         self.assertIn("invested_capital_annualized_return", metrics)
         self.assertEqual(metrics["invested_capital_occupied_days"], 2)
         self.assertGreater(metrics["invested_capital_annualized_return"], metrics["invested_capital_return"])
+    def test_open_lot_is_forced_closed_at_end_by_default(self):
+        data = bars([120, 100, 100, 90], [120, 100, 95, 90])
+        metrics, trades, lots, curve, _ = run_quality_grid(
+            data, request(force_close_at_end=True), "etf"
+        )
+        forced = [trade for trade in trades if trade.reason == "回测到期强制平仓"]
+        self.assertEqual(len(forced), 2)
+        self.assertTrue(all(lot.status == "CLOSED" for lot in lots))
+        self.assertLess(metrics["realized_profit"], 0)
+        self.assertEqual(metrics["unrealized_profit"], 0)
+        self.assertEqual(metrics["open_lot_count"], 0)
+        self.assertEqual(metrics["current_market_value"], 0)
+        self.assertEqual(curve.iloc[-1]["market_value"], 0)
+        self.assertLess(metrics["win_rate_all_lots"], 1)
     def test_open_lot_is_not_forced_closed_at_end(self):
         data = bars([120, 100, 100, 102], [120, 100, 101, 102])
         metrics, trades, lots, curve, _ = run_quality_grid(data, request(), "etf")

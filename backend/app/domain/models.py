@@ -1,4 +1,4 @@
-﻿from datetime import date
+from datetime import date
 from enum import Enum
 from typing import Literal
 
@@ -30,25 +30,36 @@ class BacktestRequest(BaseModel):
 
     # Quality Grid / 质量过滤逐笔网格
     max_strategy_cash: float = Field(default=200_000, gt=0)
-    base_cash: float = Field(default=30_000, gt=0)
+    base_cash: float = Field(default=200_000 / 12, gt=0)
     quality_confirmed: bool = True
     lookback_days: int = Field(default=360, ge=1, le=3000)
     entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
     ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
     entry_condition_mode: Literal["all", "any"] = "all"
-    grid_drop_pcts: list[float] = Field(default_factory=lambda: [0.05, 0.10, 0.15, 0.20], min_length=4, max_length=4)
-    grid_cash_multipliers: list[float] = Field(default_factory=lambda: [1.0, 2.0, 2.0, 3.0], min_length=4, max_length=4)
+    grid_drop_pcts: list[float] = Field(
+        default_factory=lambda: [0.10, 0.20, 0.30, 0.40, 0.50],
+        min_length=3,
+        max_length=10,
+    )
+    grid_cash_multipliers: list[float] = Field(
+        default_factory=lambda: [1.0, 2.0, 2.0, 3.0, 3.0],
+        min_length=3,
+        max_length=10,
+    )
     lot_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
+    holding_profit_decay_days: int = Field(default=365, ge=1, le=36500)
+    holding_profit_decay_pct: float = Field(default=0.01, ge=0, lt=5)
     basket_take_profit_enabled: bool = False
     basket_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
     reentry_drop_pct: float = Field(default=0, ge=0, lt=1)
-    commission_rate: float = Field(default=0.0005, ge=0, lt=0.1)
+    commission_rate: float = Field(default=0.05, ge=0, lt=0.1)
     min_commission: float = Field(default=5.0, ge=0)
     sell_tax_rate: float = Field(default=0.001, ge=0, lt=0.1)
-    slippage_pct: float = Field(default=0.0005, ge=0, lt=0.1)
+    slippage_pct: float = Field(default=0.05, ge=0, lt=0.1)
     enforce_a_share_board_lot: bool = True
     allow_fractional_etf: bool = False
     execution_mode: Literal["next_open"] = "next_open"
+    force_close_at_end: bool = True
 
     @field_validator("symbol")
     @classmethod
@@ -58,15 +69,94 @@ class BacktestRequest(BaseModel):
     @model_validator(mode="after")
     def validate_quality_grid(self):
         if any(x <= 0 or x >= 1 for x in self.grid_drop_pcts):
-            raise ValueError("四层补仓跌幅必须在 0 和 1 之间")
-        if self.grid_drop_pcts != sorted(self.grid_drop_pcts) or len(set(self.grid_drop_pcts)) != 4:
-            raise ValueError("四层补仓跌幅必须严格递增")
+            raise ValueError("补仓跌幅必须在 0 和 1 之间")
+        if len(self.grid_drop_pcts) != len(self.grid_cash_multipliers):
+            raise ValueError("补仓跌幅与补仓倍数的层数必须一致")
+        if self.grid_drop_pcts != sorted(self.grid_drop_pcts) or len(set(self.grid_drop_pcts)) != len(self.grid_drop_pcts):
+            raise ValueError("补仓跌幅必须严格递增")
         if any(x <= 0 for x in self.grid_cash_multipliers):
             raise ValueError("补仓金额倍数必须大于 0")
         if self.base_cash > self.max_strategy_cash:
             raise ValueError("首仓金额不能超过策略资金池上限")
         return self
 
+class StockScreenerRequest(BaseModel):
+    as_of_date: date
+    market_cap_min_usd: float = Field(default=2_000_000_000, ge=0)
+    usd_cny_rate: float = Field(default=7.0, gt=0, le=20)
+    pe_min: float = Field(default=0, ge=-1000, le=1000)
+    pe_max: float = Field(default=30, ge=-1000, le=1000)
+    net_margin_min_pct: float = Field(default=5, ge=-1000, le=1000)
+    roe_min_pct: float = Field(default=5, ge=-1000, le=1000)
+    revenue_growth_min_pct: float = Field(default=5, ge=-1000, le=10000)
+    eps_growth_min_pct: float = Field(default=5, ge=-10000, le=10000)
+    high_window_days: int = Field(default=252, ge=2, le=3000)
+    high_drawdown_min_pct: float = Field(default=30, ge=0, lt=100)
+    sma_window: int = Field(default=120, ge=2, le=1000)
+    below_sma_min_pct: float = Field(default=15, ge=0, lt=100)
+
+    @model_validator(mode="after")
+    def validate_screener(self):
+        if self.pe_min > self.pe_max:
+            raise ValueError("PE 下限不能高于上限")
+        return self
+
+
+class PortfolioBacktestRequest(BaseModel):
+    symbols: list[str] = Field(min_length=1, max_length=100)
+    start_date: date
+    end_date: date
+    total_cash: float = Field(default=200_000, gt=0)
+    benchmark: Literal[
+        "none", "csi300", "nasdaq100", "sp500", "csi1000", "sse50", "star50", "chinext",
+    ] = "none"
+    quality_confirmed: bool = True
+    lookback_days: int = Field(default=360, ge=1, le=3000)
+    ma_window: int = Field(default=120, ge=1, le=3000)
+    entry_drawdown_pct: float = Field(default=0.30, ge=0, lt=1)
+    ma_discount_pct: float = Field(default=0.15, ge=0, lt=1)
+    entry_condition_mode: Literal["all", "any"] = "all"
+    grid_drop_pcts: list[float] = Field(
+        default_factory=lambda: [0.10, 0.20, 0.30, 0.40, 0.50], min_length=3, max_length=10,
+    )
+    grid_cash_multipliers: list[float] = Field(
+        default_factory=lambda: [1.0, 2.0, 2.0, 3.0, 3.0], min_length=3, max_length=10,
+    )
+    lot_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
+    holding_profit_decay_days: int = Field(default=365, ge=1, le=36500)
+    holding_profit_decay_pct: float = Field(default=0.01, ge=0, lt=5)
+    basket_take_profit_enabled: bool = False
+    basket_take_profit_pct: float = Field(default=0.10, gt=0, lt=5)
+    reentry_drop_pct: float = Field(default=0, ge=0, lt=1)
+    commission_rate: float = Field(default=0.05, ge=0, lt=0.1)
+    min_commission: float = Field(default=5, ge=0)
+    sell_tax_rate: float = Field(default=0.001, ge=0, lt=0.1)
+    slippage_pct: float = Field(default=0.05, ge=0, lt=0.1)
+    force_close_at_end: bool = True
+    enforce_board_lot: bool = True
+    allow_fractional_etf: bool = False
+
+    @field_validator("symbols")
+    @classmethod
+    def normalize_symbols(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(value.strip().upper() for value in values if value.strip()))
+        if not normalized:
+            raise ValueError("至少输入一个证券代码")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_portfolio(self):
+        if self.start_date > self.end_date:
+            raise ValueError("开始日期不能晚于结束日期")
+        if len(self.grid_drop_pcts) != len(self.grid_cash_multipliers):
+            raise ValueError("补仓跌幅与补仓倍数的层数必须一致")
+        if any(value <= 0 or value >= 1 for value in self.grid_drop_pcts):
+            raise ValueError("补仓跌幅必须在 0 和 1 之间")
+        if self.grid_drop_pcts != sorted(self.grid_drop_pcts) or len(set(self.grid_drop_pcts)) != len(self.grid_drop_pcts):
+            raise ValueError("补仓跌幅必须严格递增")
+        if any(value <= 0 for value in self.grid_cash_multipliers):
+            raise ValueError("补仓金额倍数必须大于 0")
+        return self
 
 class TargetEntryRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=20)

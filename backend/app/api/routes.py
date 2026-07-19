@@ -4,8 +4,12 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.data.provider import MarketDataError, get_history, instrument_name
 from app.db.repository import get_run, list_runs
-from app.domain.models import BacktestRequest, OptimizationRequest, TargetEntryRequest
+from app.domain.models import (
+    BacktestRequest, OptimizationRequest, PortfolioBacktestRequest, StockScreenerRequest, TargetEntryRequest,
+)
 from app.services.backtest_service import execute
+from app.services.portfolio_service import run_portfolio_backtest
+from app.services.screener_service import run_stock_screener
 from app.services.target_entry_service import get_target_entry
 
 router = APIRouter(prefix="/api/v1")
@@ -34,6 +38,25 @@ def target_entry(request: TargetEntryRequest):
         return {"target": target, "data_info": metadata}
     except (MarketDataError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
+
+@router.post("/stock-screener")
+def stock_screener(request: StockScreenerRequest):
+    try:
+        return run_stock_screener(request)
+    except (MarketDataError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, f"选股执行失败：{exc}") from exc
+
+
+@router.post("/portfolio-backtests")
+def portfolio_backtest(request: PortfolioBacktestRequest):
+    try:
+        return run_portfolio_backtest(request)
+    except (MarketDataError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, f"组合回测执行失败：{exc}") from exc
 
 @router.post("/backtests")
 def create_backtest(request: BacktestRequest):
